@@ -1,0 +1,1307 @@
+# =============================================================================
+#  IRRIGATION - Home Assistant package        6 zone slots
+#  Place at /config/packages/irrigation.yaml
+#
+#  NOTHING IN THIS FILE NEEDS EDITING.
+#  Rename your valve entities to switch.irrigation_zone_1 ... _6 and set
+#  everything else from the dashboard: flow rate, run time, which zones exist,
+#  weather entity, weekly schedule.
+#
+#  Why the naming convention is unavoidable: the integration and utility_meter
+#  platforms resolve "source" at configuration time, so the entity id has to be
+#  literal. A template is not allowed there. Renaming four entities in the UI is
+#  the cheaper end of that trade.
+#
+#  Need more slots? Regenerate: python3 tools/generate.py --zones 10
+# =============================================================================
+
+input_boolean:
+  irrigation_enabled:
+    name: Irrigation enabled
+    icon: mdi:power
+  # Set by the blueprints while a cycle runs. Blocks manual starts and needs no
+  # automation entity id anywhere, so renaming an automation cannot break it.
+  irrigation_running:
+    name: Irrigation cycle running
+    icon: mdi:robot
+  irrigation_zone_1_enabled:
+    name: Zone 1 in use
+    icon: mdi:valve
+  irrigation_zone_2_enabled:
+    name: Zone 2 in use
+    icon: mdi:valve
+  irrigation_zone_3_enabled:
+    name: Zone 3 in use
+    icon: mdi:valve
+  irrigation_zone_4_enabled:
+    name: Zone 4 in use
+    icon: mdi:valve
+  irrigation_zone_5_enabled:
+    name: Zone 5 in use
+    icon: mdi:valve
+  irrigation_zone_6_enabled:
+    name: Zone 6 in use
+    icon: mdi:valve
+
+input_number:
+  irrigation_zone_1_rate:
+    name: Zone 1 flow rate
+    icon: mdi:water-pump
+    min: 1
+    max: 3000
+    step: 1
+    unit_of_measurement: L/h
+    mode: box
+  irrigation_zone_1_duration:
+    name: Zone 1 run time
+    icon: mdi:timer-outline
+    min: 1
+    max: 120
+    step: 1
+    unit_of_measurement: min
+  # Written by the run script and by the blueprint. Only used to work out the
+  # remaining time, never shown as a control.
+  irrigation_zone_1_last_duration:
+    name: Zone 1 active run time
+    icon: mdi:timer-sand
+    min: 0
+    max: 240
+    step: 1
+    unit_of_measurement: min
+  irrigation_zone_2_rate:
+    name: Zone 2 flow rate
+    icon: mdi:water-pump
+    min: 1
+    max: 3000
+    step: 1
+    unit_of_measurement: L/h
+    mode: box
+  irrigation_zone_2_duration:
+    name: Zone 2 run time
+    icon: mdi:timer-outline
+    min: 1
+    max: 120
+    step: 1
+    unit_of_measurement: min
+  # Written by the run script and by the blueprint. Only used to work out the
+  # remaining time, never shown as a control.
+  irrigation_zone_2_last_duration:
+    name: Zone 2 active run time
+    icon: mdi:timer-sand
+    min: 0
+    max: 240
+    step: 1
+    unit_of_measurement: min
+  irrigation_zone_3_rate:
+    name: Zone 3 flow rate
+    icon: mdi:water-pump
+    min: 1
+    max: 3000
+    step: 1
+    unit_of_measurement: L/h
+    mode: box
+  irrigation_zone_3_duration:
+    name: Zone 3 run time
+    icon: mdi:timer-outline
+    min: 1
+    max: 120
+    step: 1
+    unit_of_measurement: min
+  # Written by the run script and by the blueprint. Only used to work out the
+  # remaining time, never shown as a control.
+  irrigation_zone_3_last_duration:
+    name: Zone 3 active run time
+    icon: mdi:timer-sand
+    min: 0
+    max: 240
+    step: 1
+    unit_of_measurement: min
+  irrigation_zone_4_rate:
+    name: Zone 4 flow rate
+    icon: mdi:water-pump
+    min: 1
+    max: 3000
+    step: 1
+    unit_of_measurement: L/h
+    mode: box
+  irrigation_zone_4_duration:
+    name: Zone 4 run time
+    icon: mdi:timer-outline
+    min: 1
+    max: 120
+    step: 1
+    unit_of_measurement: min
+  # Written by the run script and by the blueprint. Only used to work out the
+  # remaining time, never shown as a control.
+  irrigation_zone_4_last_duration:
+    name: Zone 4 active run time
+    icon: mdi:timer-sand
+    min: 0
+    max: 240
+    step: 1
+    unit_of_measurement: min
+  irrigation_zone_5_rate:
+    name: Zone 5 flow rate
+    icon: mdi:water-pump
+    min: 1
+    max: 3000
+    step: 1
+    unit_of_measurement: L/h
+    mode: box
+  irrigation_zone_5_duration:
+    name: Zone 5 run time
+    icon: mdi:timer-outline
+    min: 1
+    max: 120
+    step: 1
+    unit_of_measurement: min
+  # Written by the run script and by the blueprint. Only used to work out the
+  # remaining time, never shown as a control.
+  irrigation_zone_5_last_duration:
+    name: Zone 5 active run time
+    icon: mdi:timer-sand
+    min: 0
+    max: 240
+    step: 1
+    unit_of_measurement: min
+  irrigation_zone_6_rate:
+    name: Zone 6 flow rate
+    icon: mdi:water-pump
+    min: 1
+    max: 3000
+    step: 1
+    unit_of_measurement: L/h
+    mode: box
+  irrigation_zone_6_duration:
+    name: Zone 6 run time
+    icon: mdi:timer-outline
+    min: 1
+    max: 120
+    step: 1
+    unit_of_measurement: min
+  # Written by the run script and by the blueprint. Only used to work out the
+  # remaining time, never shown as a control.
+  irrigation_zone_6_last_duration:
+    name: Zone 6 active run time
+    icon: mdi:timer-sand
+    min: 0
+    max: 240
+    step: 1
+    unit_of_measurement: min
+
+input_text:
+  irrigation_weather:
+    name: Weather entity
+    icon: mdi:weather-partly-rainy
+    max: 255
+  # Compact weekly plan for the display card, for example
+  #   Mon:1,3|Tue:2,3|Wed:1,3|Thu:3|Fri:1,3|Sat:2,3|Sun:1,3
+  # Numbers are zone slots. Presentation only - the real schedule lives in the
+  # blueprints and has to match.
+  irrigation_schedule:
+    name: Weekly plan
+    icon: mdi:calendar-week
+    max: 255
+
+input_datetime:
+  irrigation_counter_start:
+    name: Counting since
+    icon: mdi:calendar-start
+    has_date: true
+    has_time: false
+
+# -----------------------------------------------------------------------------
+# RIEMANN INTEGRATION  (L/h -> L, counts up, never reset)
+# -----------------------------------------------------------------------------
+sensor:
+  - platform: integration
+    name: Irrigation Zone 1 Total
+    unique_id: irrigation_zone_1_total
+    source: sensor.irrigation_zone_1_flow
+    method: left
+    unit_time: h
+    round: 1
+    max_sub_interval:
+      minutes: 1
+  - platform: integration
+    name: Irrigation Zone 2 Total
+    unique_id: irrigation_zone_2_total
+    source: sensor.irrigation_zone_2_flow
+    method: left
+    unit_time: h
+    round: 1
+    max_sub_interval:
+      minutes: 1
+  - platform: integration
+    name: Irrigation Zone 3 Total
+    unique_id: irrigation_zone_3_total
+    source: sensor.irrigation_zone_3_flow
+    method: left
+    unit_time: h
+    round: 1
+    max_sub_interval:
+      minutes: 1
+  - platform: integration
+    name: Irrigation Zone 4 Total
+    unique_id: irrigation_zone_4_total
+    source: sensor.irrigation_zone_4_flow
+    method: left
+    unit_time: h
+    round: 1
+    max_sub_interval:
+      minutes: 1
+  - platform: integration
+    name: Irrigation Zone 5 Total
+    unique_id: irrigation_zone_5_total
+    source: sensor.irrigation_zone_5_flow
+    method: left
+    unit_time: h
+    round: 1
+    max_sub_interval:
+      minutes: 1
+  - platform: integration
+    name: Irrigation Zone 6 Total
+    unique_id: irrigation_zone_6_total
+    source: sensor.irrigation_zone_6_flow
+    method: left
+    unit_time: h
+    round: 1
+    max_sub_interval:
+      minutes: 1
+
+# -----------------------------------------------------------------------------
+# METERS
+# -----------------------------------------------------------------------------
+utility_meter:
+  irrigation_zone_1_today:
+    name: Irrigation Zone 1 Today
+    source: sensor.irrigation_zone_1_total
+    cycle: daily
+  irrigation_zone_1_week:
+    name: Irrigation Zone 1 Week
+    source: sensor.irrigation_zone_1_total
+    cycle: weekly
+  irrigation_zone_1_month:
+    name: Irrigation Zone 1 Month
+    source: sensor.irrigation_zone_1_total
+    cycle: monthly
+  irrigation_zone_1_since:
+    name: Irrigation Zone 1 Since
+    source: sensor.irrigation_zone_1_total
+  irrigation_zone_2_today:
+    name: Irrigation Zone 2 Today
+    source: sensor.irrigation_zone_2_total
+    cycle: daily
+  irrigation_zone_2_week:
+    name: Irrigation Zone 2 Week
+    source: sensor.irrigation_zone_2_total
+    cycle: weekly
+  irrigation_zone_2_month:
+    name: Irrigation Zone 2 Month
+    source: sensor.irrigation_zone_2_total
+    cycle: monthly
+  irrigation_zone_2_since:
+    name: Irrigation Zone 2 Since
+    source: sensor.irrigation_zone_2_total
+  irrigation_zone_3_today:
+    name: Irrigation Zone 3 Today
+    source: sensor.irrigation_zone_3_total
+    cycle: daily
+  irrigation_zone_3_week:
+    name: Irrigation Zone 3 Week
+    source: sensor.irrigation_zone_3_total
+    cycle: weekly
+  irrigation_zone_3_month:
+    name: Irrigation Zone 3 Month
+    source: sensor.irrigation_zone_3_total
+    cycle: monthly
+  irrigation_zone_3_since:
+    name: Irrigation Zone 3 Since
+    source: sensor.irrigation_zone_3_total
+  irrigation_zone_4_today:
+    name: Irrigation Zone 4 Today
+    source: sensor.irrigation_zone_4_total
+    cycle: daily
+  irrigation_zone_4_week:
+    name: Irrigation Zone 4 Week
+    source: sensor.irrigation_zone_4_total
+    cycle: weekly
+  irrigation_zone_4_month:
+    name: Irrigation Zone 4 Month
+    source: sensor.irrigation_zone_4_total
+    cycle: monthly
+  irrigation_zone_4_since:
+    name: Irrigation Zone 4 Since
+    source: sensor.irrigation_zone_4_total
+  irrigation_zone_5_today:
+    name: Irrigation Zone 5 Today
+    source: sensor.irrigation_zone_5_total
+    cycle: daily
+  irrigation_zone_5_week:
+    name: Irrigation Zone 5 Week
+    source: sensor.irrigation_zone_5_total
+    cycle: weekly
+  irrigation_zone_5_month:
+    name: Irrigation Zone 5 Month
+    source: sensor.irrigation_zone_5_total
+    cycle: monthly
+  irrigation_zone_5_since:
+    name: Irrigation Zone 5 Since
+    source: sensor.irrigation_zone_5_total
+  irrigation_zone_6_today:
+    name: Irrigation Zone 6 Today
+    source: sensor.irrigation_zone_6_total
+    cycle: daily
+  irrigation_zone_6_week:
+    name: Irrigation Zone 6 Week
+    source: sensor.irrigation_zone_6_total
+    cycle: weekly
+  irrigation_zone_6_month:
+    name: Irrigation Zone 6 Month
+    source: sensor.irrigation_zone_6_total
+    cycle: monthly
+  irrigation_zone_6_since:
+    name: Irrigation Zone 6 Since
+    source: sensor.irrigation_zone_6_total
+
+# -----------------------------------------------------------------------------
+# TEMPLATE SENSORS
+# -----------------------------------------------------------------------------
+template:
+  - sensor:
+      # ---------- Zone 1 ----------
+      - name: Irrigation Zone 1 Flow
+        unique_id: irrigation_zone_1_flow
+        unit_of_measurement: L/h
+        state_class: measurement
+        state: >-
+          {% if is_state('input_boolean.irrigation_zone_1_enabled','on')
+                and is_state('switch.irrigation_zone_1','on') %}
+            {{ states('input_number.irrigation_zone_1_rate') | float(0) }}
+          {% else %}0{% endif %}
+
+      - name: Irrigation Zone 1 Name
+        unique_id: irrigation_zone_1_name
+        state: >-
+          {{ state_attr('switch.irrigation_zone_1','friendly_name') or 'Zone 1' }}
+
+      - name: Irrigation Zone 1 Remaining
+        unique_id: irrigation_zone_1_remaining
+        unit_of_measurement: min
+        state: >-
+          {% set s = states.switch.irrigation_zone_1 %}
+          {% if s is not none and s.state == 'on' %}
+            {% set ziel = states('input_number.irrigation_zone_1_last_duration') | float(0) %}
+            {% set lief = (now() - s.last_changed).total_seconds() / 60 %}
+            {{ [ziel - lief, 0] | max | round(0) }}
+          {% else %}0{% endif %}
+      # ---------- Zone 2 ----------
+      - name: Irrigation Zone 2 Flow
+        unique_id: irrigation_zone_2_flow
+        unit_of_measurement: L/h
+        state_class: measurement
+        state: >-
+          {% if is_state('input_boolean.irrigation_zone_2_enabled','on')
+                and is_state('switch.irrigation_zone_2','on') %}
+            {{ states('input_number.irrigation_zone_2_rate') | float(0) }}
+          {% else %}0{% endif %}
+
+      - name: Irrigation Zone 2 Name
+        unique_id: irrigation_zone_2_name
+        state: >-
+          {{ state_attr('switch.irrigation_zone_2','friendly_name') or 'Zone 2' }}
+
+      - name: Irrigation Zone 2 Remaining
+        unique_id: irrigation_zone_2_remaining
+        unit_of_measurement: min
+        state: >-
+          {% set s = states.switch.irrigation_zone_2 %}
+          {% if s is not none and s.state == 'on' %}
+            {% set ziel = states('input_number.irrigation_zone_2_last_duration') | float(0) %}
+            {% set lief = (now() - s.last_changed).total_seconds() / 60 %}
+            {{ [ziel - lief, 0] | max | round(0) }}
+          {% else %}0{% endif %}
+      # ---------- Zone 3 ----------
+      - name: Irrigation Zone 3 Flow
+        unique_id: irrigation_zone_3_flow
+        unit_of_measurement: L/h
+        state_class: measurement
+        state: >-
+          {% if is_state('input_boolean.irrigation_zone_3_enabled','on')
+                and is_state('switch.irrigation_zone_3','on') %}
+            {{ states('input_number.irrigation_zone_3_rate') | float(0) }}
+          {% else %}0{% endif %}
+
+      - name: Irrigation Zone 3 Name
+        unique_id: irrigation_zone_3_name
+        state: >-
+          {{ state_attr('switch.irrigation_zone_3','friendly_name') or 'Zone 3' }}
+
+      - name: Irrigation Zone 3 Remaining
+        unique_id: irrigation_zone_3_remaining
+        unit_of_measurement: min
+        state: >-
+          {% set s = states.switch.irrigation_zone_3 %}
+          {% if s is not none and s.state == 'on' %}
+            {% set ziel = states('input_number.irrigation_zone_3_last_duration') | float(0) %}
+            {% set lief = (now() - s.last_changed).total_seconds() / 60 %}
+            {{ [ziel - lief, 0] | max | round(0) }}
+          {% else %}0{% endif %}
+      # ---------- Zone 4 ----------
+      - name: Irrigation Zone 4 Flow
+        unique_id: irrigation_zone_4_flow
+        unit_of_measurement: L/h
+        state_class: measurement
+        state: >-
+          {% if is_state('input_boolean.irrigation_zone_4_enabled','on')
+                and is_state('switch.irrigation_zone_4','on') %}
+            {{ states('input_number.irrigation_zone_4_rate') | float(0) }}
+          {% else %}0{% endif %}
+
+      - name: Irrigation Zone 4 Name
+        unique_id: irrigation_zone_4_name
+        state: >-
+          {{ state_attr('switch.irrigation_zone_4','friendly_name') or 'Zone 4' }}
+
+      - name: Irrigation Zone 4 Remaining
+        unique_id: irrigation_zone_4_remaining
+        unit_of_measurement: min
+        state: >-
+          {% set s = states.switch.irrigation_zone_4 %}
+          {% if s is not none and s.state == 'on' %}
+            {% set ziel = states('input_number.irrigation_zone_4_last_duration') | float(0) %}
+            {% set lief = (now() - s.last_changed).total_seconds() / 60 %}
+            {{ [ziel - lief, 0] | max | round(0) }}
+          {% else %}0{% endif %}
+      # ---------- Zone 5 ----------
+      - name: Irrigation Zone 5 Flow
+        unique_id: irrigation_zone_5_flow
+        unit_of_measurement: L/h
+        state_class: measurement
+        state: >-
+          {% if is_state('input_boolean.irrigation_zone_5_enabled','on')
+                and is_state('switch.irrigation_zone_5','on') %}
+            {{ states('input_number.irrigation_zone_5_rate') | float(0) }}
+          {% else %}0{% endif %}
+
+      - name: Irrigation Zone 5 Name
+        unique_id: irrigation_zone_5_name
+        state: >-
+          {{ state_attr('switch.irrigation_zone_5','friendly_name') or 'Zone 5' }}
+
+      - name: Irrigation Zone 5 Remaining
+        unique_id: irrigation_zone_5_remaining
+        unit_of_measurement: min
+        state: >-
+          {% set s = states.switch.irrigation_zone_5 %}
+          {% if s is not none and s.state == 'on' %}
+            {% set ziel = states('input_number.irrigation_zone_5_last_duration') | float(0) %}
+            {% set lief = (now() - s.last_changed).total_seconds() / 60 %}
+            {{ [ziel - lief, 0] | max | round(0) }}
+          {% else %}0{% endif %}
+      # ---------- Zone 6 ----------
+      - name: Irrigation Zone 6 Flow
+        unique_id: irrigation_zone_6_flow
+        unit_of_measurement: L/h
+        state_class: measurement
+        state: >-
+          {% if is_state('input_boolean.irrigation_zone_6_enabled','on')
+                and is_state('switch.irrigation_zone_6','on') %}
+            {{ states('input_number.irrigation_zone_6_rate') | float(0) }}
+          {% else %}0{% endif %}
+
+      - name: Irrigation Zone 6 Name
+        unique_id: irrigation_zone_6_name
+        state: >-
+          {{ state_attr('switch.irrigation_zone_6','friendly_name') or 'Zone 6' }}
+
+      - name: Irrigation Zone 6 Remaining
+        unique_id: irrigation_zone_6_remaining
+        unit_of_measurement: min
+        state: >-
+          {% set s = states.switch.irrigation_zone_6 %}
+          {% if s is not none and s.state == 'on' %}
+            {% set ziel = states('input_number.irrigation_zone_6_last_duration') | float(0) %}
+            {% set lief = (now() - s.last_changed).total_seconds() / 60 %}
+            {{ [ziel - lief, 0] | max | round(0) }}
+          {% else %}0{% endif %}
+
+      # ---------- Totals ----------
+      - name: Irrigation Water Today
+        unique_id: irrigation_water_today
+        unit_of_measurement: L
+        state_class: measurement
+        icon: mdi:water-outline
+        state: >-
+          {{ ( 0 + states('sensor.irrigation_zone_1_today') | float(0) + states('sensor.irrigation_zone_2_today') | float(0) + states('sensor.irrigation_zone_3_today') | float(0) + states('sensor.irrigation_zone_4_today') | float(0) + states('sensor.irrigation_zone_5_today') | float(0) + states('sensor.irrigation_zone_6_today') | float(0) ) | round(0) }}
+      - name: Irrigation Water Week
+        unique_id: irrigation_water_week
+        unit_of_measurement: L
+        state_class: measurement
+        icon: mdi:water-outline
+        state: >-
+          {{ ( 0 + states('sensor.irrigation_zone_1_week') | float(0) + states('sensor.irrigation_zone_2_week') | float(0) + states('sensor.irrigation_zone_3_week') | float(0) + states('sensor.irrigation_zone_4_week') | float(0) + states('sensor.irrigation_zone_5_week') | float(0) + states('sensor.irrigation_zone_6_week') | float(0) ) | round(0) }}
+      - name: Irrigation Water Month
+        unique_id: irrigation_water_month
+        unit_of_measurement: L
+        state_class: measurement
+        icon: mdi:water-outline
+        state: >-
+          {{ ( 0 + states('sensor.irrigation_zone_1_month') | float(0) + states('sensor.irrigation_zone_2_month') | float(0) + states('sensor.irrigation_zone_3_month') | float(0) + states('sensor.irrigation_zone_4_month') | float(0) + states('sensor.irrigation_zone_5_month') | float(0) + states('sensor.irrigation_zone_6_month') | float(0) ) | round(0) }}
+      - name: Irrigation Water Since
+        unique_id: irrigation_water_since
+        unit_of_measurement: L
+        state_class: measurement
+        icon: mdi:water-outline
+        state: >-
+          {{ ( 0 + states('sensor.irrigation_zone_1_since') | float(0) + states('sensor.irrigation_zone_2_since') | float(0) + states('sensor.irrigation_zone_3_since') | float(0) + states('sensor.irrigation_zone_4_since') | float(0) + states('sensor.irrigation_zone_5_since') | float(0) + states('sensor.irrigation_zone_6_since') | float(0) ) | round(0) }}
+
+      # ---------- Global status ----------
+      - name: Irrigation Flow
+        unique_id: irrigation_flow
+        unit_of_measurement: L/h
+        state_class: measurement
+        icon: mdi:water-pump
+        state: "{{ ( 0 + states('sensor.irrigation_zone_1_flow') | float(0) + states('sensor.irrigation_zone_2_flow') | float(0) + states('sensor.irrigation_zone_3_flow') | float(0) + states('sensor.irrigation_zone_4_flow') | float(0) + states('sensor.irrigation_zone_5_flow') | float(0) + states('sensor.irrigation_zone_6_flow') | float(0) ) | round(0) }}"
+
+      - name: Irrigation Remaining
+        unique_id: irrigation_remaining
+        unit_of_measurement: min
+        state: "{{ [ states('sensor.irrigation_zone_1_remaining') | float(0), states('sensor.irrigation_zone_2_remaining') | float(0), states('sensor.irrigation_zone_3_remaining') | float(0), states('sensor.irrigation_zone_4_remaining') | float(0), states('sensor.irrigation_zone_5_remaining') | float(0), states('sensor.irrigation_zone_6_remaining') | float(0) ] | max | round(0) }}"
+
+      - name: Irrigation Active Zones
+        unique_id: irrigation_active_zones
+        icon: mdi:sprinkler-variant
+        state: >-
+          {% set ns = namespace(l=[]) %}
+          {% for i in range(1, 7) %}
+            {% if is_state('switch.irrigation_zone_' ~ i, 'on') %}
+              {% set ns.l = ns.l + [ states('sensor.irrigation_zone_' ~ i ~ '_name') ] %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.l | join(' + ') if ns.l else 'Ready' }}
+
+      - name: Irrigation Daily Average
+        unique_id: irrigation_daily_average
+        unit_of_measurement: L
+        state: >-
+          {% set tage = now().weekday() %}
+          {% if tage < 1 %}unknown{% else %}
+          {{ (( states('sensor.irrigation_water_week') | float(0)
+              - states('sensor.irrigation_water_today') | float(0) ) / tage) | round(0) }}
+          {% endif %}
+
+      - name: Irrigation Average Since
+        unique_id: irrigation_average_since
+        unit_of_measurement: L
+        state: >-
+          {% set ts = state_attr('input_datetime.irrigation_counter_start','timestamp') %}
+          {% if ts is none %}unknown{% else %}
+          {% set tage = [ ((now().timestamp() - ts) / 86400) | round(0) | int, 1 ] | max %}
+          {{ (states('sensor.irrigation_water_since') | float(0) / tage) | round(0) }}
+          {% endif %}
+
+      - name: Irrigation Counter Start
+        unique_id: irrigation_counter_start_text
+        icon: mdi:calendar-start
+        state: >-
+          {% set ts = state_attr('input_datetime.irrigation_counter_start','timestamp') %}
+          {{ ts | timestamp_custom('%d.%m.%Y', true) if ts else 'not set' }}
+
+      - name: Irrigation Next Run
+        unique_id: irrigation_next_run
+        icon: mdi:clock-outline
+        state: >-
+          {% set r0 = states('sensor.irrigation_rain_today') | float(0) %}
+          {% set r1 = states('sensor.irrigation_rain_tomorrow') | float(0) %}
+          {% set r2 = states('sensor.irrigation_rain_day_after') | float(0) %}
+          {% if not is_state('input_boolean.irrigation_enabled','on') %}
+            Irrigation switched off
+          {% elif now().hour < 5 %}
+            {{ 'Today 05:00 - rain skip likely, ' ~ (r0 + r1) | round(1) ~ ' mm'
+                if (r0 + r1) >= 6 else 'Today 05:00' }}
+          {% else %}
+            {{ 'Tomorrow 05:00 - rain skip likely, ' ~ (r1 + r2) | round(1) ~ ' mm'
+                if (r1 + r2) >= 6 else 'Tomorrow 05:00' }}
+          {% endif %}
+
+  - binary_sensor:
+      - name: Irrigation Running
+        unique_id: irrigation_is_running
+        device_class: running
+        state: "{{ is_state('switch.irrigation_zone_1','on') or is_state('switch.irrigation_zone_2','on') or is_state('switch.irrigation_zone_3','on') or is_state('switch.irrigation_zone_4','on') or is_state('switch.irrigation_zone_5','on') or is_state('switch.irrigation_zone_6','on') }}"
+
+  # ---------------------------------------------------------------------------
+  # RUN LOG AND FAULTS
+  # ---------------------------------------------------------------------------
+  - trigger:
+      - trigger: state
+        id: run
+        entity_id:
+          - switch.irrigation_zone_1
+          - switch.irrigation_zone_2
+          - switch.irrigation_zone_3
+          - switch.irrigation_zone_4
+          - switch.irrigation_zone_5
+          - switch.irrigation_zone_6
+        from: "on"
+        to: "off"
+      - trigger: state
+        id: offline
+        entity_id:
+          - switch.irrigation_zone_1
+          - switch.irrigation_zone_2
+          - switch.irrigation_zone_3
+          - switch.irrigation_zone_4
+          - switch.irrigation_zone_5
+          - switch.irrigation_zone_6
+        to:
+          - unavailable
+          - unknown
+        for:
+          minutes: 1
+      - trigger: state
+        id: online
+        entity_id:
+          - switch.irrigation_zone_1
+          - switch.irrigation_zone_2
+          - switch.irrigation_zone_3
+          - switch.irrigation_zone_4
+          - switch.irrigation_zone_5
+          - switch.irrigation_zone_6
+        from:
+          - unavailable
+          - unknown
+        to:
+          - "on"
+          - "off"
+        for:
+          seconds: 30
+      - trigger: event
+        id: fault
+        event_type: irrigation_fault
+    sensor:
+      - name: Irrigation Log
+        unique_id: irrigation_log
+        icon: mdi:history
+        state: >-
+          {% if trigger.id == 'fault' %}{{ trigger.event.data.zone }} -
+          {{ trigger.event.data.text }}{% else %}{{
+          state_attr(trigger.entity_id,'friendly_name') or trigger.entity_id }} -
+          {{ now() | as_local | as_timestamp | timestamp_custom('%d.%m. %H:%M') }}{% endif %}
+        attributes:
+          entries: >-
+            {% set raw = this.attributes.get('entries', []) %}
+            {% set old = raw if (raw is sequence and raw is not string) else [] %}
+            {% set now_txt = now() | as_local | as_timestamp
+                            | timestamp_custom('%d.%m. %H:%M') %}
+            {% if trigger.id == 'run' %}
+              {% set slot = trigger.entity_id.split('_')[-1] %}
+              {% set rate = states('input_number.irrigation_zone_' ~ slot ~ '_rate') | float(0) %}
+              {% set sec = (trigger.to_state.last_changed
+                          - trigger.from_state.last_changed).total_seconds() %}
+              {% if sec >= 10 %}
+                {% set e = {'kind':'run',
+                     'zone': states('sensor.irrigation_zone_' ~ slot ~ '_name'),
+                     'slot': slot | int,
+                     'start': trigger.from_state.last_changed | as_local
+                              | as_timestamp | timestamp_custom('%d.%m. %H:%M'),
+                     'sec': sec | round(0) | int,
+                     'liters': (sec / 3600 * rate) | round(1),
+                     'text': ''} %}
+                {{ ([e] + old)[:25] }}
+              {% else %}{{ old }}{% endif %}
+            {% elif trigger.id in ['offline','online'] %}
+              {% set slot = trigger.entity_id.split('_')[-1] %}
+              {% set e = {'kind': 'fault' if trigger.id == 'offline' else 'info',
+                   'zone': states('sensor.irrigation_zone_' ~ slot ~ '_name'),
+                   'slot': slot | int, 'start': now_txt, 'sec': 0, 'liters': 0,
+                   'text': 'Device unreachable' if trigger.id == 'offline'
+                           else 'back online'} %}
+              {{ ([e] + old)[:25] }}
+            {% elif trigger.id == 'fault' %}
+              {% set e = {'kind':'fault', 'zone': trigger.event.data.zone,
+                   'slot': 0, 'start': now_txt, 'sec': 0, 'liters': 0,
+                   'text': trigger.event.data.text} %}
+              {{ ([e] + old)[:25] }}
+            {% else %}{{ old }}{% endif %}
+
+  # ---------------------------------------------------------------------------
+  # RAIN FORECAST
+  # The weather entity comes from an input_text, which only works because
+  # weather.get_forecasts is called from an action where targets may be
+  # templated.
+  # ---------------------------------------------------------------------------
+  - trigger:
+      - trigger: time_pattern
+        minutes: "/15"
+      - trigger: homeassistant
+        event: start
+    condition:
+      - condition: template
+        value_template: "{{ has_value('input_text.irrigation_weather') }}"
+    action:
+      - action: weather.get_forecasts
+        target:
+          entity_id: "{{ states('input_text.irrigation_weather') }}"
+        data:
+          type: daily
+        response_variable: fc
+    sensor:
+      - name: Irrigation Rain Today
+        unique_id: irrigation_rain_today
+        unit_of_measurement: mm
+        state: >-
+          {% set f = (fc.values() | list | first).forecast %}
+          {{ (f[0].precipitation | float(0)) | round(1) if f | length > 0 else 0 }}
+      - name: Irrigation Rain Tomorrow
+        unique_id: irrigation_rain_tomorrow
+        unit_of_measurement: mm
+        state: >-
+          {% set f = (fc.values() | list | first).forecast %}
+          {{ (f[1].precipitation | float(0)) | round(1) if f | length > 1 else 0 }}
+      - name: Irrigation Rain Day After
+        unique_id: irrigation_rain_day_after
+        unit_of_measurement: mm
+        state: >-
+          {% set f = (fc.values() | list | first).forecast %}
+          {{ (f[2].precipitation | float(0)) | round(1) if f | length > 2 else 0 }}
+
+# -----------------------------------------------------------------------------
+# SCRIPTS
+# -----------------------------------------------------------------------------
+script:
+  irrigation_zone_1_run:
+    alias: Irrigation zone 1 manual run
+    icon: mdi:play
+    mode: restart
+    variables:
+      minutes: "{{ states('input_number.irrigation_zone_1_duration') | int(10) }}"
+    sequence:
+      - if:
+          - condition: state
+            entity_id: input_boolean.irrigation_running
+            state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_1_name') }}"
+              text: Manual start rejected, a cycle is running
+          - stop: Cycle running
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.irrigation_zone_1_last_duration
+        data:
+          value: "{{ minutes }}"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.irrigation_zone_1
+      - wait_template: "{{ is_state('switch.irrigation_zone_1','on') }}"
+        timeout:
+          seconds: 90
+        continue_on_timeout: true
+      - if:
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_1
+                state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_1_name') }}"
+              text: Valve did not confirm the start
+          - stop: Start not confirmed
+      - delay:
+          minutes: "{{ minutes }}"
+      - action: switch.turn_off
+        target:
+          entity_id: switch.irrigation_zone_1
+
+  irrigation_zone_1_toggle:
+    alias: Irrigation zone 1 start/stop
+    icon: mdi:play-pause
+    mode: restart
+    sequence:
+      - if:
+          - condition: or
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_1
+                state: "on"
+              - condition: state
+                entity_id: script.irrigation_zone_1_run
+                state: "on"
+        then:
+          - action: script.turn_off
+            target:
+              entity_id: script.irrigation_zone_1_run
+          - action: switch.turn_off
+            target:
+              entity_id: switch.irrigation_zone_1
+        else:
+          - action: script.turn_on
+            target:
+              entity_id: script.irrigation_zone_1_run
+
+  irrigation_zone_2_run:
+    alias: Irrigation zone 2 manual run
+    icon: mdi:play
+    mode: restart
+    variables:
+      minutes: "{{ states('input_number.irrigation_zone_2_duration') | int(10) }}"
+    sequence:
+      - if:
+          - condition: state
+            entity_id: input_boolean.irrigation_running
+            state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_2_name') }}"
+              text: Manual start rejected, a cycle is running
+          - stop: Cycle running
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.irrigation_zone_2_last_duration
+        data:
+          value: "{{ minutes }}"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.irrigation_zone_2
+      - wait_template: "{{ is_state('switch.irrigation_zone_2','on') }}"
+        timeout:
+          seconds: 90
+        continue_on_timeout: true
+      - if:
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_2
+                state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_2_name') }}"
+              text: Valve did not confirm the start
+          - stop: Start not confirmed
+      - delay:
+          minutes: "{{ minutes }}"
+      - action: switch.turn_off
+        target:
+          entity_id: switch.irrigation_zone_2
+
+  irrigation_zone_2_toggle:
+    alias: Irrigation zone 2 start/stop
+    icon: mdi:play-pause
+    mode: restart
+    sequence:
+      - if:
+          - condition: or
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_2
+                state: "on"
+              - condition: state
+                entity_id: script.irrigation_zone_2_run
+                state: "on"
+        then:
+          - action: script.turn_off
+            target:
+              entity_id: script.irrigation_zone_2_run
+          - action: switch.turn_off
+            target:
+              entity_id: switch.irrigation_zone_2
+        else:
+          - action: script.turn_on
+            target:
+              entity_id: script.irrigation_zone_2_run
+
+  irrigation_zone_3_run:
+    alias: Irrigation zone 3 manual run
+    icon: mdi:play
+    mode: restart
+    variables:
+      minutes: "{{ states('input_number.irrigation_zone_3_duration') | int(10) }}"
+    sequence:
+      - if:
+          - condition: state
+            entity_id: input_boolean.irrigation_running
+            state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_3_name') }}"
+              text: Manual start rejected, a cycle is running
+          - stop: Cycle running
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.irrigation_zone_3_last_duration
+        data:
+          value: "{{ minutes }}"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.irrigation_zone_3
+      - wait_template: "{{ is_state('switch.irrigation_zone_3','on') }}"
+        timeout:
+          seconds: 90
+        continue_on_timeout: true
+      - if:
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_3
+                state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_3_name') }}"
+              text: Valve did not confirm the start
+          - stop: Start not confirmed
+      - delay:
+          minutes: "{{ minutes }}"
+      - action: switch.turn_off
+        target:
+          entity_id: switch.irrigation_zone_3
+
+  irrigation_zone_3_toggle:
+    alias: Irrigation zone 3 start/stop
+    icon: mdi:play-pause
+    mode: restart
+    sequence:
+      - if:
+          - condition: or
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_3
+                state: "on"
+              - condition: state
+                entity_id: script.irrigation_zone_3_run
+                state: "on"
+        then:
+          - action: script.turn_off
+            target:
+              entity_id: script.irrigation_zone_3_run
+          - action: switch.turn_off
+            target:
+              entity_id: switch.irrigation_zone_3
+        else:
+          - action: script.turn_on
+            target:
+              entity_id: script.irrigation_zone_3_run
+
+  irrigation_zone_4_run:
+    alias: Irrigation zone 4 manual run
+    icon: mdi:play
+    mode: restart
+    variables:
+      minutes: "{{ states('input_number.irrigation_zone_4_duration') | int(10) }}"
+    sequence:
+      - if:
+          - condition: state
+            entity_id: input_boolean.irrigation_running
+            state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_4_name') }}"
+              text: Manual start rejected, a cycle is running
+          - stop: Cycle running
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.irrigation_zone_4_last_duration
+        data:
+          value: "{{ minutes }}"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.irrigation_zone_4
+      - wait_template: "{{ is_state('switch.irrigation_zone_4','on') }}"
+        timeout:
+          seconds: 90
+        continue_on_timeout: true
+      - if:
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_4
+                state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_4_name') }}"
+              text: Valve did not confirm the start
+          - stop: Start not confirmed
+      - delay:
+          minutes: "{{ minutes }}"
+      - action: switch.turn_off
+        target:
+          entity_id: switch.irrigation_zone_4
+
+  irrigation_zone_4_toggle:
+    alias: Irrigation zone 4 start/stop
+    icon: mdi:play-pause
+    mode: restart
+    sequence:
+      - if:
+          - condition: or
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_4
+                state: "on"
+              - condition: state
+                entity_id: script.irrigation_zone_4_run
+                state: "on"
+        then:
+          - action: script.turn_off
+            target:
+              entity_id: script.irrigation_zone_4_run
+          - action: switch.turn_off
+            target:
+              entity_id: switch.irrigation_zone_4
+        else:
+          - action: script.turn_on
+            target:
+              entity_id: script.irrigation_zone_4_run
+
+  irrigation_zone_5_run:
+    alias: Irrigation zone 5 manual run
+    icon: mdi:play
+    mode: restart
+    variables:
+      minutes: "{{ states('input_number.irrigation_zone_5_duration') | int(10) }}"
+    sequence:
+      - if:
+          - condition: state
+            entity_id: input_boolean.irrigation_running
+            state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_5_name') }}"
+              text: Manual start rejected, a cycle is running
+          - stop: Cycle running
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.irrigation_zone_5_last_duration
+        data:
+          value: "{{ minutes }}"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.irrigation_zone_5
+      - wait_template: "{{ is_state('switch.irrigation_zone_5','on') }}"
+        timeout:
+          seconds: 90
+        continue_on_timeout: true
+      - if:
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_5
+                state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_5_name') }}"
+              text: Valve did not confirm the start
+          - stop: Start not confirmed
+      - delay:
+          minutes: "{{ minutes }}"
+      - action: switch.turn_off
+        target:
+          entity_id: switch.irrigation_zone_5
+
+  irrigation_zone_5_toggle:
+    alias: Irrigation zone 5 start/stop
+    icon: mdi:play-pause
+    mode: restart
+    sequence:
+      - if:
+          - condition: or
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_5
+                state: "on"
+              - condition: state
+                entity_id: script.irrigation_zone_5_run
+                state: "on"
+        then:
+          - action: script.turn_off
+            target:
+              entity_id: script.irrigation_zone_5_run
+          - action: switch.turn_off
+            target:
+              entity_id: switch.irrigation_zone_5
+        else:
+          - action: script.turn_on
+            target:
+              entity_id: script.irrigation_zone_5_run
+
+  irrigation_zone_6_run:
+    alias: Irrigation zone 6 manual run
+    icon: mdi:play
+    mode: restart
+    variables:
+      minutes: "{{ states('input_number.irrigation_zone_6_duration') | int(10) }}"
+    sequence:
+      - if:
+          - condition: state
+            entity_id: input_boolean.irrigation_running
+            state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_6_name') }}"
+              text: Manual start rejected, a cycle is running
+          - stop: Cycle running
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.irrigation_zone_6_last_duration
+        data:
+          value: "{{ minutes }}"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.irrigation_zone_6
+      - wait_template: "{{ is_state('switch.irrigation_zone_6','on') }}"
+        timeout:
+          seconds: 90
+        continue_on_timeout: true
+      - if:
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_6
+                state: "on"
+        then:
+          - event: irrigation_fault
+            event_data:
+              zone: "{{ states('sensor.irrigation_zone_6_name') }}"
+              text: Valve did not confirm the start
+          - stop: Start not confirmed
+      - delay:
+          minutes: "{{ minutes }}"
+      - action: switch.turn_off
+        target:
+          entity_id: switch.irrigation_zone_6
+
+  irrigation_zone_6_toggle:
+    alias: Irrigation zone 6 start/stop
+    icon: mdi:play-pause
+    mode: restart
+    sequence:
+      - if:
+          - condition: or
+            conditions:
+              - condition: state
+                entity_id: switch.irrigation_zone_6
+                state: "on"
+              - condition: state
+                entity_id: script.irrigation_zone_6_run
+                state: "on"
+        then:
+          - action: script.turn_off
+            target:
+              entity_id: script.irrigation_zone_6_run
+          - action: switch.turn_off
+            target:
+              entity_id: switch.irrigation_zone_6
+        else:
+          - action: script.turn_on
+            target:
+              entity_id: script.irrigation_zone_6_run
+
+  irrigation_stop_all:
+    alias: Irrigation stop everything
+    icon: mdi:stop
+    mode: single
+    sequence:
+      - action: script.turn_off
+        target:
+          entity_id:
+            - script.irrigation_zone_1_run
+            - script.irrigation_zone_2_run
+            - script.irrigation_zone_3_run
+            - script.irrigation_zone_4_run
+            - script.irrigation_zone_5_run
+            - script.irrigation_zone_6_run
+      - action: switch.turn_off
+        target:
+          entity_id:
+            - switch.irrigation_zone_1
+            - switch.irrigation_zone_2
+            - switch.irrigation_zone_3
+            - switch.irrigation_zone_4
+            - switch.irrigation_zone_5
+            - switch.irrigation_zone_6
+
+# -----------------------------------------------------------------------------
+# AUTOMATIONS
+# -----------------------------------------------------------------------------
+automation:
+  # Changing the start date resets the "since" meters only. Counting backwards
+  # is impossible - the date is a starting mark, not a filter.
+  - id: irrigation_counter_start_changed
+    alias: Irrigation - counter start changed
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_datetime.irrigation_counter_start
+        not_from:
+          - unknown
+          - unavailable
+        not_to:
+          - unknown
+          - unavailable
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ trigger.from_state is not none and trigger.to_state is not none
+             and trigger.from_state.state != trigger.to_state.state }}
+    actions:
+      - action: utility_meter.reset
+        target:
+          entity_id:
+            - sensor.irrigation_zone_1_since
+            - sensor.irrigation_zone_2_since
+            - sensor.irrigation_zone_3_since
+            - sensor.irrigation_zone_4_since
+            - sensor.irrigation_zone_5_since
+            - sensor.irrigation_zone_6_since
+
+  # If a blueprint aborts mid-cycle the running flag would stay on and block
+  # every manual start. This clears it after three hours and logs it.
+  - id: irrigation_running_flag_watchdog
+    alias: Irrigation - clear stuck cycle flag
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.irrigation_running
+        to: "on"
+        for:
+          hours: 3
+    actions:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.irrigation_running
+      - event: irrigation_fault
+        event_data:
+          zone: Cycle
+          text: Cycle flag was stuck, cleared automatically
+
+  - id: irrigation_morning_check
+    alias: Irrigation - morning cycle check
+    mode: single
+    triggers:
+      - trigger: time
+        at: "06:30:00"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.irrigation_enabled
+        state: "on"
+      - condition: template
+        value_template: "{{ states('sensor.irrigation_water_today') | float(0) < 0.2 }}"
+    actions:
+      - event: irrigation_fault
+        event_data:
+          zone: Morning cycle
+          text: No water flowed before 06:30
+

@@ -1,0 +1,467 @@
+blueprint:
+  name: Irrigation - sequential cycle
+  description: >-
+    Runs up to three zones one after another at a fixed time. Each zone's run
+    time is scaled by the forecast daily high temperature, and the run can be
+    skipped when enough rain is expected.
+
+
+    Sequential means zone 2 only starts once zone 1 has finished. That is
+    deliberate: valves opened in parallel share the line pressure, and the
+    configured flow rates stop being accurate.
+
+
+    Every zone has its own weekdays. A zone with a base duration of 0 is
+    skipped, so the same blueprint also covers cycles with one or two zones.
+  domain: automation
+  source_url: https://github.com/strikecom/ha-irrigation/blob/main/blueprints/automation/irrigation/sequential_cycle.yaml
+
+  input:
+    allgemein:
+      name: General
+      icon: mdi:cog-outline
+      input:
+        startzeit:
+          name: Start time
+          description: Time of day the cycle begins.
+          default: "05:00:00"
+          selector:
+            time: {}
+
+        hauptschalter:
+          name: Master switch
+          description: >-
+            The cycle only runs while this switch is on. Useful over winter
+            or whenever the water supply is shut off.
+          selector:
+            entity:
+              filter:
+                - domain: input_boolean
+                - domain: switch
+
+        running_flag:
+          name: Cycle flag
+          description: >-
+            input_boolean.irrigation_running from the package. Switched on for
+            the duration of the cycle so manual starts are blocked. Using a
+            helper instead of the automation's own state means renaming the
+            automation cannot break the interlock.
+          default: input_boolean.irrigation_running
+          selector:
+            entity:
+              filter:
+                - domain: input_boolean
+
+        saison_monate:
+          name: Months
+          description: Months in which the cycle should run.
+          default: ["5", "6", "7", "8", "9"]
+          selector:
+            select:
+              multiple: true
+              options:
+                - { label: January, value: "1" }
+                - { label: February, value: "2" }
+                - { label: March, value: "3" }
+                - { label: April, value: "4" }
+                - { label: May, value: "5" }
+                - { label: June, value: "6" }
+                - { label: July, value: "7" }
+                - { label: August, value: "8" }
+                - { label: September, value: "9" }
+                - { label: October, value: "10" }
+                - { label: November, value: "11" }
+                - { label: December, value: "12" }
+
+    wetter:
+      name: Weather
+      icon: mdi:weather-partly-rainy
+      input:
+        wetter_entitaet:
+          name: Weather entity
+          description: >-
+            Provides the daily high temperature and the precipitation
+            forecast. Must support the weather.get_forecasts action.
+          selector:
+            entity:
+              filter:
+                - domain: weather
+
+        regen_schwelle:
+          name: Rain threshold
+          description: >-
+            Precipitation today plus tomorrow. Once reached, every zone with
+            the rain skip enabled is skipped.
+          default: 6
+          selector:
+            number:
+              min: 0
+              max: 40
+              step: 0.5
+              unit_of_measurement: mm
+              mode: slider
+
+    zone_1:
+      name: Zone 1
+      icon: mdi:numeric-1-circle-outline
+      input:
+        z1_ventil:
+          name: Valve
+          default: {}
+          selector:
+            entity:
+              filter:
+                - domain: switch
+        z1_dauer_entitaet:
+          name: Duration entity on the device
+          description: >-
+            Optional. Many irrigation controllers expose a number entity for
+            the target duration and switch off on their own. If present it is
+            set before turning the valve on. Leave empty if there is none, the
+            automation switches off by itself anyway.
+          default: {}
+          selector:
+            entity:
+              filter:
+                - domain: number
+        z1_runtime_helper:
+          name: Active run time helper
+          description: >-
+            input_number.irrigation_zone_N_last_duration from the package. The
+            scaled duration is written here so the dashboard can show the
+            remaining time. Optional.
+          default: {}
+          selector:
+            entity:
+              filter:
+                - domain: input_number
+
+        z1_grunddauer:
+          name: Base duration
+          description: Minutes at normal temperature. 0 disables the zone.
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 120
+              step: 1
+              unit_of_measurement: min
+              mode: box
+        z1_tage:
+          name: Weekdays
+          default: []
+          selector:
+            select:
+              multiple: true
+              options:
+                - { label: Monday, value: "0" }
+                - { label: Tuesday, value: "1" }
+                - { label: Wednesday, value: "2" }
+                - { label: Thursday, value: "3" }
+                - { label: Friday, value: "4" }
+                - { label: Saturday, value: "5" }
+                - { label: Sunday, value: "6" }
+        z1_regen_skip:
+          name: Apply rain skip
+          description: >-
+            Turn off for zones under a roof or in a greenhouse, where rain
+            does not change the water demand.
+          default: true
+          selector:
+            boolean: {}
+
+    zone_2:
+      name: Zone 2
+      icon: mdi:numeric-2-circle-outline
+      input:
+        z2_ventil:
+          name: Valve
+          default: {}
+          selector:
+            entity:
+              filter:
+                - domain: switch
+        z2_dauer_entitaet:
+          name: Duration entity on the device
+          default: {}
+          selector:
+            entity:
+              filter:
+                - domain: number
+        z2_runtime_helper:
+          name: Active run time helper
+          description: >-
+            input_number.irrigation_zone_N_last_duration from the package. The
+            scaled duration is written here so the dashboard can show the
+            remaining time. Optional.
+          default: {}
+          selector:
+            entity:
+              filter:
+                - domain: input_number
+
+        z2_grunddauer:
+          name: Base duration
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 120
+              step: 1
+              unit_of_measurement: min
+              mode: box
+        z2_tage:
+          name: Weekdays
+          default: []
+          selector:
+            select:
+              multiple: true
+              options:
+                - { label: Monday, value: "0" }
+                - { label: Tuesday, value: "1" }
+                - { label: Wednesday, value: "2" }
+                - { label: Thursday, value: "3" }
+                - { label: Friday, value: "4" }
+                - { label: Saturday, value: "5" }
+                - { label: Sunday, value: "6" }
+        z2_regen_skip:
+          name: Apply rain skip
+          default: true
+          selector:
+            boolean: {}
+
+    zone_3:
+      name: Zone 3
+      icon: mdi:numeric-3-circle-outline
+      input:
+        z3_ventil:
+          name: Valve
+          default: {}
+          selector:
+            entity:
+              filter:
+                - domain: switch
+        z3_dauer_entitaet:
+          name: Duration entity on the device
+          default: {}
+          selector:
+            entity:
+              filter:
+                - domain: number
+        z3_runtime_helper:
+          name: Active run time helper
+          description: >-
+            input_number.irrigation_zone_N_last_duration from the package. The
+            scaled duration is written here so the dashboard can show the
+            remaining time. Optional.
+          default: {}
+          selector:
+            entity:
+              filter:
+                - domain: input_number
+
+        z3_grunddauer:
+          name: Base duration
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 120
+              step: 1
+              unit_of_measurement: min
+              mode: box
+        z3_tage:
+          name: Weekdays
+          default: []
+          selector:
+            select:
+              multiple: true
+              options:
+                - { label: Monday, value: "0" }
+                - { label: Tuesday, value: "1" }
+                - { label: Wednesday, value: "2" }
+                - { label: Thursday, value: "3" }
+                - { label: Friday, value: "4" }
+                - { label: Saturday, value: "5" }
+                - { label: Sunday, value: "6" }
+        z3_regen_skip:
+          name: Apply rain skip
+          default: false
+          selector:
+            boolean: {}
+
+    abschluss:
+      name: After the cycle
+      icon: mdi:bell-outline
+      input:
+        abschluss_aktionen:
+          name: Actions after the cycle
+          description: >-
+            Optional, a notification for example. Available variables:
+            gelaufene_zonen (list), regen_skip (true/false), temp_max (°C),
+            faktor, regen_summe (mm).
+          default: []
+          selector:
+            action: {}
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: time
+    at: !input startzeit
+
+conditions:
+  - condition: template
+    value_template: "{{ now().month | string in saison_monate }}"
+  - condition: state
+    entity_id: !input hauptschalter
+    state: "on"
+
+variables:
+  saison_monate: !input saison_monate
+  running_flag: !input running_flag
+  regen_schwelle: !input regen_schwelle
+  zonen:
+    - ventil: !input z1_ventil
+      dauer_entitaet: !input z1_dauer_entitaet
+      runtime_helper: !input z1_runtime_helper
+      grunddauer: !input z1_grunddauer
+      tage: !input z1_tage
+      regen_skip: !input z1_regen_skip
+    - ventil: !input z2_ventil
+      dauer_entitaet: !input z2_dauer_entitaet
+      runtime_helper: !input z2_runtime_helper
+      grunddauer: !input z2_grunddauer
+      tage: !input z2_tage
+      regen_skip: !input z2_regen_skip
+    - ventil: !input z3_ventil
+      dauer_entitaet: !input z3_dauer_entitaet
+      runtime_helper: !input z3_runtime_helper
+      grunddauer: !input z3_grunddauer
+      tage: !input z3_tage
+      regen_skip: !input z3_regen_skip
+
+actions:
+  - action: input_boolean.turn_on
+    target:
+      entity_id: "{{ running_flag }}"
+
+  - action: weather.get_forecasts
+    target:
+      entity_id: !input wetter_entitaet
+    data:
+      type: daily
+    response_variable: fc
+
+  - variables:
+      prognose: "{{ (fc.values() | list | first).forecast }}"
+
+  - variables:
+      temp_max: "{{ prognose[0].temperature | float(20) }}"
+      regen_summe: >-
+        {{ (prognose[0].precipitation | float(0))
+         + ((prognose[1].precipitation | float(0)) if prognose | length > 1 else 0) }}
+
+  - variables:
+      # Evaporation rises faster than temperature. The steps are coarse on
+      # purpose: a finer scale would suggest a precision that a daily forecast
+      # cannot deliver.
+      faktor: >-
+        {% if   temp_max >= 32 %}1.4
+        {% elif temp_max >= 28 %}1.2
+        {% elif temp_max >= 24 %}1.0
+        {% elif temp_max >= 19 %}0.8
+        {% else %}0.6{% endif %}
+      regen_skip: "{{ regen_summe >= (regen_schwelle | float(6)) }}"
+
+  - repeat:
+      for_each: "{{ zonen }}"
+      sequence:
+        - variables:
+            ventil: "{{ repeat.item.ventil }}"
+            dauer: >-
+              {{ ((repeat.item.grunddauer | float(0)) * (faktor | float(1)))
+                 | round(0) | int }}
+            faellig: >-
+              {{ repeat.item.ventil not in [none, '', {}]
+                 and (repeat.item.grunddauer | float(0)) > 0
+                 and (now().weekday() | string) in (repeat.item.tage | default([]))
+                 and not (repeat.item.regen_skip and regen_skip) }}
+
+        - condition: template
+          value_template: "{{ faellig and dauer > 0 }}"
+
+        # Set the target duration on the device if a number entity is given.
+        - if:
+            - condition: template
+              value_template: "{{ repeat.item.dauer_entitaet not in [none, '', {}] }}"
+          then:
+            - action: number.set_value
+              target:
+                entity_id: "{{ repeat.item.dauer_entitaet }}"
+              data:
+                value: "{{ dauer }}"
+            - delay:
+                seconds: 3
+
+        # Write the scaled duration so the dashboard can compute a remaining
+        # time for automated runs, not just manual ones.
+        - if:
+            - condition: template
+              value_template: "{{ repeat.item.runtime_helper not in [none, '', {}] }}"
+          then:
+            - action: input_number.set_value
+              target:
+                entity_id: "{{ repeat.item.runtime_helper }}"
+              data:
+                value: "{{ dauer }}"
+
+        - action: switch.turn_on
+          target:
+            entity_id: "{{ ventil }}"
+
+        # Start confirmation. If the valve does not report "on" within 90 s
+        # the zone is skipped, rather than waiting out a delay behind which no
+        # water ever flowed. wait_template rather than wait_for_trigger,
+        # because it continues immediately when the state already matches.
+        - wait_template: "{{ is_state(ventil, 'on') }}"
+          timeout:
+            seconds: 90
+          continue_on_timeout: true
+
+        - if:
+            - condition: template
+              value_template: "{{ not is_state(ventil, 'on') }}"
+          then:
+            - event: irrigation_fault
+              event_data:
+                zone: "{{ state_attr(ventil, 'friendly_name') or ventil }}"
+                text: Valve did not confirm the start
+            - continue_on_error: true
+              stop: ""
+
+        - delay:
+            minutes: "{{ dauer }}"
+
+        - action: switch.turn_off
+          target:
+            entity_id: "{{ ventil }}"
+
+        # Short pause so line pressure recovers before the next zone.
+        - delay:
+            minutes: 2
+
+  - variables:
+      gelaufene_zonen: >-
+        {{ zonen | selectattr('ventil', 'ne', none)
+                 | selectattr('grunddauer', 'gt', 0)
+                 | map(attribute='ventil') | list }}
+
+  - action: input_boolean.turn_off
+    target:
+      entity_id: "{{ running_flag }}"
+
+  - choose:
+      - conditions: []
+        sequence: !input abschluss_aktionen

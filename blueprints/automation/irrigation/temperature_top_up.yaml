@@ -1,0 +1,253 @@
+blueprint:
+  name: Irrigation - temperature triggered top up
+  description: >-
+    An extra run of a single zone, triggered only above a temperature
+    threshold. Intended for pots and planters that need a second watering on
+    hot days but not on cool ones.
+
+
+    Deliberately ignores rain: pots under a roof or on a terrace get nothing
+    from rainfall, so a rain skip would do harm there.
+  domain: automation
+  source_url: https://github.com/strikecom/ha-irrigation/blob/main/blueprints/automation/irrigation/temperature_top_up.yaml
+
+  input:
+    startzeit:
+      name: Start time
+      default: "20:00:00"
+      selector:
+        time: {}
+
+    hauptschalter:
+      name: Master switch
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+            - domain: switch
+
+    saison_monate:
+      name: Months
+      default: ["5", "6", "7", "8", "9"]
+      selector:
+        select:
+          multiple: true
+          options:
+            - { label: January, value: "1" }
+            - { label: February, value: "2" }
+            - { label: March, value: "3" }
+            - { label: April, value: "4" }
+            - { label: May, value: "5" }
+            - { label: June, value: "6" }
+            - { label: July, value: "7" }
+            - { label: August, value: "8" }
+            - { label: September, value: "9" }
+            - { label: October, value: "10" }
+            - { label: November, value: "11" }
+            - { label: December, value: "12" }
+
+    wetter_entitaet:
+      name: Weather entity
+      selector:
+        entity:
+          filter:
+            - domain: weather
+
+    schwelle:
+      name: Temperature threshold
+      description: Nothing happens below this forecast daily high.
+      default: 22
+      selector:
+        number:
+          min: 5
+          max: 40
+          step: 1
+          unit_of_measurement: "°C"
+          mode: slider
+
+    ventil:
+      name: Valve
+      selector:
+        entity:
+          filter:
+            - domain: switch
+
+    running_flag:
+      name: Cycle flag
+      description: >-
+        input_boolean.irrigation_running from the package.
+      default: input_boolean.irrigation_running
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+
+    runtime_helper:
+      name: Active run time helper
+      description: >-
+        input_number.irrigation_zone_N_last_duration from the package. Optional.
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: input_number
+
+    dauer_entitaet:
+      name: Duration entity on the device
+      description: Optional, see the description in the cycle blueprint.
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: number
+
+    dauer_normal:
+      name: Run time
+      description: Minutes between the threshold and the heat limit.
+      default: 6
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
+          unit_of_measurement: min
+          mode: box
+
+    hitze_grenze:
+      name: Heat limit
+      description: >-
+        Above this temperature the short run time applies. That sounds
+        backwards but is not: on very hot days the morning cycle already runs
+        longer, so the evening top up should only re-moisten, not drown.
+      default: 30
+      selector:
+        number:
+          min: 20
+          max: 45
+          step: 1
+          unit_of_measurement: "°C"
+          mode: slider
+
+    dauer_hitze:
+      name: Run time above heat limit
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
+          unit_of_measurement: min
+          mode: box
+
+    abschluss_aktionen:
+      name: Actions after the run
+      description: >-
+        Optional. Available variables: dauer (min), temp_max (°C).
+      default: []
+      selector:
+        action: {}
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: time
+    at: !input startzeit
+
+conditions:
+  - condition: template
+    value_template: "{{ now().month | string in saison_monate }}"
+  - condition: state
+    entity_id: !input hauptschalter
+    state: "on"
+
+variables:
+  saison_monate: !input saison_monate
+  schwelle: !input schwelle
+  hitze_grenze: !input hitze_grenze
+  dauer_normal: !input dauer_normal
+  dauer_hitze: !input dauer_hitze
+  ventil: !input ventil
+  dauer_entitaet: !input dauer_entitaet
+  running_flag: !input running_flag
+  runtime_helper: !input runtime_helper
+
+actions:
+  - action: weather.get_forecasts
+    target:
+      entity_id: !input wetter_entitaet
+    data:
+      type: daily
+    response_variable: fc
+
+  - variables:
+      temp_max: >-
+        {{ (fc.values() | list | first).forecast[0].temperature | float(0) }}
+
+  - condition: template
+    value_template: "{{ temp_max >= (schwelle | float(22)) }}"
+
+  - variables:
+      dauer: >-
+        {{ (dauer_hitze | int) if temp_max >= (hitze_grenze | float(30))
+           else (dauer_normal | int) }}
+
+  - if:
+      - condition: template
+        value_template: "{{ dauer_entitaet not in [none, '', {}] }}"
+    then:
+      - action: number.set_value
+        target:
+          entity_id: "{{ dauer_entitaet }}"
+        data:
+          value: "{{ dauer }}"
+      - delay:
+          seconds: 3
+
+  - action: input_boolean.turn_on
+    target:
+      entity_id: "{{ running_flag }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ runtime_helper not in [none, '', {}] }}"
+    then:
+      - action: input_number.set_value
+        target:
+          entity_id: "{{ runtime_helper }}"
+        data:
+          value: "{{ dauer }}"
+
+  - action: switch.turn_on
+    target:
+      entity_id: "{{ ventil }}"
+
+  - wait_template: "{{ is_state(ventil, 'on') }}"
+    timeout:
+      seconds: 90
+    continue_on_timeout: true
+
+  - if:
+      - condition: template
+        value_template: "{{ not is_state(ventil, 'on') }}"
+    then:
+      - event: irrigation_fault
+        event_data:
+          zone: "{{ state_attr(ventil, 'friendly_name') or ventil }}"
+          text: Valve did not confirm the start
+      - stop: Start not confirmed
+
+  - delay:
+      minutes: "{{ dauer }}"
+
+  - action: switch.turn_off
+    target:
+      entity_id: "{{ ventil }}"
+
+  - action: input_boolean.turn_off
+    target:
+      entity_id: "{{ running_flag }}"
+
+  - choose:
+      - conditions: []
+        sequence: !input abschluss_aktionen

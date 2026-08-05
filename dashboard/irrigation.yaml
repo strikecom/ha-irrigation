@@ -1,0 +1,1713 @@
+# =============================================================================
+#  IRRIGATION - Lovelace dashboard        6 zone slots
+#  Paste into the raw configuration editor of a new dashboard.
+#
+#  Nothing in this file needs editing. Zones that are switched off in
+#  input_boolean.irrigation_zone_N_enabled are hidden automatically.
+#  Zone names come from the friendly name of the valve entity, so renaming a
+#  zone is done in the more-info dialog inside the zone pop-up.
+#
+#  Chart legends use slot numbers rather than names, because apexcharts-card
+#  resolves series names at configuration time and cannot template them.
+# =============================================================================
+
+views:
+- title: Irrigation
+  path: irrigation
+  icon: mdi:sprinkler-variant
+  type: sections
+  max_columns: 3
+  dense_section_placement: true
+  header:
+    badges_position: bottom
+    layout: start
+  sections:
+  - type: grid
+    cards:
+    - type: custom:mushroom-chips-card
+      alignment: start
+      chips:
+      - type: entity
+        entity: input_boolean.irrigation_enabled
+        icon: mdi:power
+        content_info: none
+        tap_action:
+          action: toggle
+      - type: template
+        icon: mdi:water-percent
+        content: '{{ states(''sensor.irrigation_water_week'') }} L / week'
+      - type: template
+        icon: mdi:weather-rainy
+        content: '{{ states(''sensor.irrigation_rain_tomorrow'') }} mm tomorrow'
+      - type: template
+        icon: mdi:robot-outline
+        content: '{{ ''Cycle running'' if is_state(''input_boolean.irrigation_running'',''on'') else ''Ready''
+          }}'
+      card_mod:
+        style: |
+          ha-card { --chip-background: rgba(127,127,127,0.10); --chip-border-width: 0; }
+      grid_options:
+        columns: 12
+        rows: 1
+    - type: custom:button-card
+      entity: binary_sensor.irrigation_running
+      show_icon: false
+      show_name: false
+      show_state: false
+      show_label: false
+      tap_action:
+        action: none
+      triggers_update:
+      - sensor.irrigation_remaining
+      - sensor.irrigation_active_zones
+      - sensor.irrigation_next_run
+      - sensor.irrigation_water_today
+      - sensor.irrigation_flow
+      grid_options:
+        columns: 12
+        rows: 3
+      styles:
+        grid:
+        - grid-template-areas: '"hero"'
+        - grid-template-columns: 1fr
+        card:
+        - padding: 0
+        - border: none
+        - border-radius: 28px
+        - overflow: hidden
+        - height: 100%
+        - box-shadow: 0 10px 30px rgba(0,0,0,0.16)
+        custom_fields:
+          hero:
+          - width: 100%
+          - height: 100%
+          - white-space: normal
+      custom_fields:
+        hero: |-
+          [[[
+            const N = 6;
+            const zonen = [];
+            for (let i = 1; i <= N; i++) {
+              const s = states['switch.irrigation_zone_' + i];
+              if (s && s.state === 'on') zonen.push(i);
+            }
+            const on = zonen.length > 0;
+
+            let rest = 0, ziel = 1, laeuft = 0;
+            zonen.forEach(i => {
+              const r = parseFloat(states['sensor.irrigation_zone_' + i + '_remaining'].state) || 0;
+              if (r >= rest) {
+                rest = r;
+                ziel = Math.max(1, parseFloat(
+                  states['input_number.irrigation_zone_' + i + '_last_duration'].state) || 1);
+              }
+              const el = (Date.now() -
+                new Date(states['switch.irrigation_zone_' + i].last_changed).getTime()) / 1000;
+              if (el > laeuft) laeuft = el;
+            });
+
+            const pct   = on ? Math.min(100, Math.max(0, (1 - rest / ziel) * 100)) : 0;
+            const flow  = Math.round(parseFloat(states['sensor.irrigation_flow'].state) || 0);
+            const today = Math.round(parseFloat(states['sensor.irrigation_water_today'].state) || 0);
+
+            const kicker = on ? states['sensor.irrigation_active_zones'].state : 'Used today';
+            const big    = on ? Math.ceil(rest) : today;
+            const unit   = on ? 'min' : 'L';
+            const sub    = on ? flow + ' L/h - target ' + Math.round(ziel) + ' min'
+                              : states['sensor.irrigation_next_run'].state;
+
+            // SMIL rather than CSS keyframes. A negative begin resumes the wave at the
+            // right phase whenever the card is re-rendered.
+            const welle = (y, amp, dur, fill) => {
+              const start = -(laeuft % dur).toFixed(2);
+              const p = `M0,${y} C 100,${y-amp} 300,${y+amp} 400,${y}`
+                      + ` C 500,${y-amp} 700,${y+amp} 800,${y}`
+                      + ` C 900,${y-amp} 1100,${y+amp} 1200,${y} L1200,120 L0,120 Z`;
+              return `<svg viewBox="0 0 800 120" preserveAspectRatio="none"
+                           style="position:absolute;inset:0;width:100%;height:100%;">
+                        <g><animateTransform attributeName="transform" type="translate"
+                             from="0 0" to="-400 0" dur="${dur}s" begin="${start}s"
+                             repeatCount="indefinite"/>
+                           <path d="${p}" fill="${fill}"/></g></svg>`;
+            };
+
+            const wasser = on ? `
+              <div style="position:absolute;inset:0;background:linear-gradient(180deg,
+                          rgba(10,132,255,.10),rgba(100,210,255,.20));"></div>
+              <div style="position:absolute;left:0;right:0;bottom:0;height:78%;overflow:hidden;">
+                ${welle(60, 15, 9, 'rgba(140,205,255,0.22)')}
+                ${welle(78, 11, 6.5, 'rgba(255,255,255,0.10)')}
+              </div>
+              <div style="position:absolute;left:0;bottom:0;height:4px;width:${pct}%;
+                          background:rgba(255,255,255,.6);border-radius:0 4px 4px 0;
+                          transition:width 1200ms cubic-bezier(.32,.72,0,1);"></div>` : '';
+
+            return `
+              <div style="position:relative;overflow:hidden;height:100%;display:flex;
+                          flex-direction:column;justify-content:center;">
+                ${wasser}
+                <div style="position:relative;padding:20px 24px;text-align:left;">
+                  <div style="font-size:12px;font-weight:600;letter-spacing:.08em;
+                              text-transform:uppercase;opacity:.55;">${kicker}</div>
+                  <div style="display:flex;align-items:baseline;gap:8px;margin-top:4px;">
+                    <span style="font-size:56px;font-weight:600;line-height:1;
+                                 letter-spacing:-.04em;font-variant-numeric:tabular-nums;">${big}</span>
+                    <span style="font-size:21px;font-weight:500;opacity:.5;">${unit}</span>
+                  </div>
+                  <div style="margin-top:8px;font-size:14px;opacity:.6;">${sub}</div>
+                </div>
+              </div>`;
+          ]]]
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: binary_sensor.irrigation_running
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: Stop everything
+        secondary: Ends every running zone immediately
+        icon: mdi:stop-circle-outline
+        icon_color: red
+        fill_container: true
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_stop_all
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              border-radius: 24px;
+              background: rgba(255,69,58,0.10);
+            }
+      grid_options:
+        columns: 12
+        rows: auto
+    - type: heading
+      heading: Weekly plan
+      heading_style: title
+      icon: mdi:calendar-week
+    - type: custom:button-card
+      entity: input_text.irrigation_schedule
+      show_icon: false
+      show_name: false
+      show_state: false
+      tap_action:
+        action: none
+      grid_options:
+        columns: 12
+        rows: 3
+      styles:
+        grid:
+        - grid-template-areas: '"plan"'
+        - grid-template-columns: 1fr
+        card:
+        - padding: 0
+        - border: none
+        - border-radius: 28px
+        - box-shadow: none
+        custom_fields:
+          plan:
+          - width: 100%
+          - white-space: normal
+      custom_fields:
+        plan: |-
+          [[[
+            // Reads input_text.irrigation_schedule, format
+            //   Mon:1,3|Tue:2,3|Wed:1,3|Thu:3|Fri:1,3|Sat:2,3|Sun:1,3
+            const PAL = ["#30D158", "#FF9F0A", "#64D2FF", "#5E5CE6", "#FF375F", "#BF5AF2"];
+            const raw = (states['input_text.irrigation_schedule'] || {}).state || '';
+            const tage = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+            const plan = {};
+            raw.split('|').forEach(t => {
+              const [tag, rest] = t.split(':');
+              if (!tag) return;
+              plan[tag.trim()] = (rest || '').split(',')
+                .map(s => parseInt(s, 10)).filter(v => v > 0);
+            });
+
+            if (!Object.keys(plan).length) return `
+              <div style="padding:18px;font-size:13px;opacity:.45;line-height:1.6;">
+                No schedule set.<br>
+                Fill input_text.irrigation_schedule, for example<br>
+                <code>Mon:1,3|Tue:2,3|Wed:1,3|Thu:3|Fri:1,3|Sat:2,3|Sun:1,3</code>
+              </div>`;
+
+            const heute = (new Date().getDay() + 6) % 7;
+            const genutzt = [...new Set(Object.values(plan).flat())].sort((a,b) => a-b);
+
+            const spalten = tage.map((tag, i) => {
+              const aktiv = i === heute;
+              const slots = plan[tag] || [];
+              const punkte = genutzt.map(z => {
+                const an = slots.includes(z);
+                return `<div style="width:8px;height:8px;border-radius:50%;margin:0 auto;
+                          background:${an ? PAL[(z-1) % PAL.length] : 'currentColor'};
+                          opacity:${an ? 1 : .12};"></div>`;
+              }).join('<div style="height:7px"></div>');
+              return `<div style="flex:1;text-align:center;padding:12px 0 14px;border-radius:14px;
+                           background:${aktiv ? 'rgba(10,132,255,.14)' : 'transparent'};">
+                        <div style="font-size:12px;font-weight:${aktiv ? 700 : 500};
+                                    letter-spacing:.04em;opacity:${aktiv ? 1 : .45};
+                                    margin-bottom:10px;">${tag}</div>${punkte}</div>`;
+            }).join('');
+
+            const legende = genutzt.map(z => {
+              const s = states['sensor.irrigation_zone_' + z + '_name'];
+              const name = s ? s.state : 'Zone ' + z;
+              return `<span style="display:inline-flex;align-items:center;gap:6px;
+                             font-size:12px;opacity:.6;margin-right:16px;">
+                        <span style="width:7px;height:7px;border-radius:50%;
+                              background:${PAL[(z-1) % PAL.length]};"></span>${name}</span>`;
+            }).join('');
+
+            return `<div style="padding:16px 12px 14px;box-sizing:border-box;">
+                      <div style="display:flex;gap:2px;">${spalten}</div>
+                      <div style="margin-top:14px;padding-top:14px;
+                                  border-top:1px solid rgba(127,127,127,.16);
+                                  display:flex;flex-wrap:wrap;align-items:center;">${legende}</div>
+                    </div>`;
+          ]]]
+    - type: custom:mushroom-template-card
+      primary: '{{ states(''sensor.irrigation_next_run'') }}'
+      secondary: Next scheduled run
+      icon: mdi:clock-time-five-outline
+      icon_color: blue
+      multiline_secondary: true
+      tap_action:
+        action: none
+      card_mod:
+        style: |
+          ha-card { border: none; border-radius: 24px; }
+          mushroom-state-info $ .primary { font-weight: 600; }
+      grid_options:
+        columns: 12
+        rows: auto
+    - type: heading
+      heading: Recent activity
+      heading_style: title
+      icon: mdi:history
+    - type: custom:button-card
+      entity: sensor.irrigation_log
+      show_icon: false
+      show_name: false
+      show_state: false
+      tap_action:
+        action: none
+      hold_action:
+        action: none
+      styles:
+        grid:
+        - grid-template-areas: '"list"'
+        - grid-template-columns: 1fr
+        card:
+        - padding: 0
+        - border: none
+        - border-radius: 28px
+        - box-shadow: none
+        - overflow: hidden
+        - pointer-events: none
+        custom_fields:
+          list:
+          - width: 100%
+          - white-space: normal
+          - pointer-events: auto
+      custom_fields:
+        list: |-
+          [[[
+            const PAL = ["#30D158", "#FF9F0A", "#64D2FF", "#5E5CE6", "#FF375F", "#BF5AF2"];
+            const WARN = '#FF453A', INFO = '#8E8E93';
+            const a = states['sensor.irrigation_log']
+                    ? states['sensor.irrigation_log'].attributes.entries : null;
+            const e = Array.isArray(a) ? a : [];
+
+            if (!e.length) return `
+              <div style="padding:18px;font-size:13px;opacity:.45;line-height:1.6;">
+                No entries yet.<br>The list starts with the next run or the next fault.
+              </div>`;
+
+            const dauer = s => {
+              const v = Number(s);
+              if (!isFinite(v) || v <= 0) return '';
+              return v < 60 ? `${Math.round(v)} s` : `${Math.round(v / 60)} min`;
+            };
+
+            const zeilen = e.map(x => {
+              const warn = x.kind === 'fault', info = x.kind === 'info';
+              const col = warn ? WARN : info ? INFO : PAL[((x.slot || 1) - 1) % PAL.length];
+              const right = (warn || info)
+                ? `<span style="display:block;font-size:12px;opacity:.6;max-width:150px;">
+                     ${x.text || ''}</span>`
+                : `<span style="display:block;font-size:14px;font-weight:600;
+                                font-variant-numeric:tabular-nums;">${x.liters ?? 0} L</span>
+                   <span style="display:block;font-size:12px;opacity:.5;">${dauer(x.sec)}</span>`;
+              return `<div style="display:flex;align-items:center;gap:12px;padding:11px 14px;
+                           border-bottom:1px solid rgba(127,127,127,.10);box-sizing:border-box;
+                           background:${warn ? 'rgba(255,69,58,.07)' : 'transparent'};">
+                        <span style="width:8px;height:8px;border-radius:50%;flex:none;
+                              background:${col};"></span>
+                        <span style="flex:1;min-width:0;">
+                          <span style="display:block;font-size:14px;font-weight:600;
+                                letter-spacing:-.01em;color:${warn ? WARN : 'inherit'};">
+                            ${x.zone || 'Irrigation'}</span>
+                          <span style="display:block;font-size:12px;opacity:.5;">
+                            ${x.start || ''}</span></span>
+                        <span style="text-align:right;flex:none;">${right}</span>
+                      </div>`;
+            }).join('');
+
+            return `<div style="max-height:238px;overflow-y:auto;overscroll-behavior:contain;
+                                touch-action:pan-y;-webkit-overflow-scrolling:touch;">
+                      ${zeilen}</div>`;
+          ]]]
+      grid_options:
+        columns: 12
+        rows: 4
+  - type: grid
+    cards:
+    - type: heading
+      heading: Consumption
+      heading_style: title
+      icon: mdi:chart-box-outline
+    - type: custom:apexcharts-card
+      header:
+        show: true
+        title: Daily use, 7 days
+        show_states: false
+      graph_span: 7d
+      span:
+        end: day
+      stacked: true
+      update_interval: 30s
+      apex_config:
+        chart:
+          height: 240
+          toolbar:
+            show: false
+        plotOptions:
+          bar:
+            columnWidth: 26px
+            borderRadius: 3
+        grid:
+          borderColor: rgba(127,127,127,0.12)
+          strokeDashArray: 0
+        legend:
+          position: bottom
+          markers:
+            radius: 6
+        dataLabels:
+          enabled: false
+        xaxis:
+          axisBorder:
+            show: false
+          axisTicks:
+            show: false
+          tooltip:
+            enabled: false
+        tooltip:
+          shared: true
+      series:
+      - entity: sensor.irrigation_zone_1_total
+        name: Zone 1
+        type: column
+        color: '#30D158'
+        unit: ' L'
+        group_by:
+          func: diff
+          duration: 1d
+      - entity: sensor.irrigation_zone_2_total
+        name: Zone 2
+        type: column
+        color: '#FF9F0A'
+        unit: ' L'
+        group_by:
+          func: diff
+          duration: 1d
+      - entity: sensor.irrigation_zone_3_total
+        name: Zone 3
+        type: column
+        color: '#64D2FF'
+        unit: ' L'
+        group_by:
+          func: diff
+          duration: 1d
+      - entity: sensor.irrigation_zone_4_total
+        name: Zone 4
+        type: column
+        color: '#5E5CE6'
+        unit: ' L'
+        group_by:
+          func: diff
+          duration: 1d
+      - entity: sensor.irrigation_zone_5_total
+        name: Zone 5
+        type: column
+        color: '#FF375F'
+        unit: ' L'
+        group_by:
+          func: diff
+          duration: 1d
+      - entity: sensor.irrigation_zone_6_total
+        name: Zone 6
+        type: column
+        color: '#BF5AF2'
+        unit: ' L'
+        group_by:
+          func: diff
+          duration: 1d
+      card_mod:
+        style: |
+          ha-card { border: none; border-radius: 28px; }
+      grid_options:
+        columns: 12
+        rows: auto
+    - type: custom:apexcharts-card
+      chart_type: donut
+      header:
+        show: true
+        title: Share this month
+        show_states: false
+      apex_config:
+        chart:
+          height: 240
+        legend:
+          position: bottom
+        plotOptions:
+          pie:
+            donut:
+              size: 74%
+              labels:
+                show: true
+                name:
+                  show: true
+                  fontSize: 13px
+                  color: var(--primary-text-color)
+                  offsetY: 22
+                value:
+                  show: true
+                  fontSize: 28px
+                  fontWeight: 600
+                  color: var(--primary-text-color)
+                  offsetY: -16
+                  formatter: |-
+                    EVAL:function(v) {
+                      return Number(v).toFixed(0) + ' L';
+                    }
+                total:
+                  show: true
+                  showAlways: true
+                  label: Total
+                  fontSize: 13px
+                  color: var(--primary-text-color)
+                  formatter: |-
+                    EVAL:function(w) {
+                      const s = w.globals.seriesTotals.reduce((a,b) => a+b, 0);
+                      return s.toFixed(0) + ' L';
+                    }
+        stroke:
+          width: 0
+        dataLabels:
+          enabled: false
+      series:
+      - entity: sensor.irrigation_zone_1_month
+        name: Zone 1
+        color: '#30D158'
+      - entity: sensor.irrigation_zone_2_month
+        name: Zone 2
+        color: '#FF9F0A'
+      - entity: sensor.irrigation_zone_3_month
+        name: Zone 3
+        color: '#64D2FF'
+      - entity: sensor.irrigation_zone_4_month
+        name: Zone 4
+        color: '#5E5CE6'
+      - entity: sensor.irrigation_zone_5_month
+        name: Zone 5
+        color: '#FF375F'
+      - entity: sensor.irrigation_zone_6_month
+        name: Zone 6
+        color: '#BF5AF2'
+      card_mod:
+        style: |
+          ha-card { border: none; border-radius: 28px; }
+      grid_options:
+        columns: 12
+        rows: auto
+    - type: custom:mushroom-template-card
+      primary: '{{ states(''sensor.irrigation_water_today'') }} L'
+      secondary: '{% set a = states(''sensor.irrigation_daily_average'') %}{% if a in [''unknown'',''unavailable'']
+        %}Today{% else %}Today - avg {{ a }} L{% endif %}'
+      icon: mdi:weather-sunny
+      icon_color: '{% set a = states(''sensor.irrigation_daily_average'') | float(0) %}{% set h = states(''sensor.irrigation_water_today'')
+        | float(0) %}{% if a > 0 and h > a * 2 %}orange{% else %}blue{% endif %}'
+      multiline_secondary: true
+      tap_action:
+        action: none
+      card_mod:
+        style: |
+          ha-card { border: none; border-radius: 22px; }
+          mushroom-state-info $ .primary {
+            font-size: 21px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            font-variant-numeric: tabular-nums;
+          }
+      grid_options:
+        columns: 6
+        rows: auto
+    - type: custom:mushroom-template-card
+      primary: '{{ states(''sensor.irrigation_water_since'') }} L'
+      secondary: since {{ states('sensor.irrigation_counter_start') }} - avg {{ states('sensor.irrigation_average_since')
+        }} L/day
+      icon: mdi:counter
+      icon_color: indigo
+      entity: input_datetime.irrigation_counter_start
+      multiline_secondary: true
+      tap_action:
+        action: more-info
+      card_mod:
+        style: |
+          ha-card { border: none; border-radius: 22px; }
+          mushroom-state-info $ .primary {
+            font-size: 21px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            font-variant-numeric: tabular-nums;
+          }
+      grid_options:
+        columns: 6
+        rows: auto
+  - type: grid
+    cards:
+    - type: heading
+      heading: Zones
+      heading_style: title
+      icon: mdi:valve
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_1_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{{ states(''sensor.irrigation_zone_1_name'') }}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_1'',''on'') or is_state(''script.irrigation_zone_1_run'',''on'')
+          %}{% if on %}Running - {{ states(''sensor.irrigation_zone_1_remaining'') }} min left{% else
+          %}{{ states(''sensor.irrigation_zone_1_today'') | float(0) | round(0) }} L today - {{ states(''input_number.irrigation_zone_1_rate'')
+          | int }} L/h{% endif %}'
+        icon: '{{ state_attr(''switch.irrigation_zone_1'',''icon'') or ''mdi:sprinkler-variant'' }}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_1'',''on'') or is_state(''script.irrigation_zone_1_run'',''on'')
+          %}{{ ''green'' if on else ''grey'' }}'
+        tap_action:
+          action: navigate
+          navigation_path: '#zone-1'
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 22px 6px 6px 22px;
+            }
+            mushroom-state-info $ .primary {
+              font-weight: 600;
+              letter-spacing: -0.01em;
+            }
+      grid_options:
+        columns: 7
+        rows: 1
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_1_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_1'',''on'') or is_state(''script.irrigation_zone_1_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_1'',''on'') or is_state(''script.irrigation_zone_1_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_1_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_1_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_1'',''on'') or is_state(''script.irrigation_zone_1_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_1'',''on'') or is_state(''script.irrigation_zone_1_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_1_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 6px 22px 22px 6px;
+            }
+      grid_options:
+        columns: 5
+        rows: 1
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_2_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{{ states(''sensor.irrigation_zone_2_name'') }}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_2'',''on'') or is_state(''script.irrigation_zone_2_run'',''on'')
+          %}{% if on %}Running - {{ states(''sensor.irrigation_zone_2_remaining'') }} min left{% else
+          %}{{ states(''sensor.irrigation_zone_2_today'') | float(0) | round(0) }} L today - {{ states(''input_number.irrigation_zone_2_rate'')
+          | int }} L/h{% endif %}'
+        icon: '{{ state_attr(''switch.irrigation_zone_2'',''icon'') or ''mdi:sprinkler-variant'' }}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_2'',''on'') or is_state(''script.irrigation_zone_2_run'',''on'')
+          %}{{ ''green'' if on else ''grey'' }}'
+        tap_action:
+          action: navigate
+          navigation_path: '#zone-2'
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 22px 6px 6px 22px;
+            }
+            mushroom-state-info $ .primary {
+              font-weight: 600;
+              letter-spacing: -0.01em;
+            }
+      grid_options:
+        columns: 7
+        rows: 1
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_2_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_2'',''on'') or is_state(''script.irrigation_zone_2_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_2'',''on'') or is_state(''script.irrigation_zone_2_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_2_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_2_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_2'',''on'') or is_state(''script.irrigation_zone_2_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_2'',''on'') or is_state(''script.irrigation_zone_2_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_2_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 6px 22px 22px 6px;
+            }
+      grid_options:
+        columns: 5
+        rows: 1
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_3_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{{ states(''sensor.irrigation_zone_3_name'') }}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_3'',''on'') or is_state(''script.irrigation_zone_3_run'',''on'')
+          %}{% if on %}Running - {{ states(''sensor.irrigation_zone_3_remaining'') }} min left{% else
+          %}{{ states(''sensor.irrigation_zone_3_today'') | float(0) | round(0) }} L today - {{ states(''input_number.irrigation_zone_3_rate'')
+          | int }} L/h{% endif %}'
+        icon: '{{ state_attr(''switch.irrigation_zone_3'',''icon'') or ''mdi:sprinkler-variant'' }}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_3'',''on'') or is_state(''script.irrigation_zone_3_run'',''on'')
+          %}{{ ''green'' if on else ''grey'' }}'
+        tap_action:
+          action: navigate
+          navigation_path: '#zone-3'
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 22px 6px 6px 22px;
+            }
+            mushroom-state-info $ .primary {
+              font-weight: 600;
+              letter-spacing: -0.01em;
+            }
+      grid_options:
+        columns: 7
+        rows: 1
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_3_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_3'',''on'') or is_state(''script.irrigation_zone_3_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_3'',''on'') or is_state(''script.irrigation_zone_3_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_3_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_3_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_3'',''on'') or is_state(''script.irrigation_zone_3_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_3'',''on'') or is_state(''script.irrigation_zone_3_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_3_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 6px 22px 22px 6px;
+            }
+      grid_options:
+        columns: 5
+        rows: 1
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_4_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{{ states(''sensor.irrigation_zone_4_name'') }}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_4'',''on'') or is_state(''script.irrigation_zone_4_run'',''on'')
+          %}{% if on %}Running - {{ states(''sensor.irrigation_zone_4_remaining'') }} min left{% else
+          %}{{ states(''sensor.irrigation_zone_4_today'') | float(0) | round(0) }} L today - {{ states(''input_number.irrigation_zone_4_rate'')
+          | int }} L/h{% endif %}'
+        icon: '{{ state_attr(''switch.irrigation_zone_4'',''icon'') or ''mdi:sprinkler-variant'' }}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_4'',''on'') or is_state(''script.irrigation_zone_4_run'',''on'')
+          %}{{ ''green'' if on else ''grey'' }}'
+        tap_action:
+          action: navigate
+          navigation_path: '#zone-4'
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 22px 6px 6px 22px;
+            }
+            mushroom-state-info $ .primary {
+              font-weight: 600;
+              letter-spacing: -0.01em;
+            }
+      grid_options:
+        columns: 7
+        rows: 1
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_4_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_4'',''on'') or is_state(''script.irrigation_zone_4_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_4'',''on'') or is_state(''script.irrigation_zone_4_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_4_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_4_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_4'',''on'') or is_state(''script.irrigation_zone_4_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_4'',''on'') or is_state(''script.irrigation_zone_4_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_4_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 6px 22px 22px 6px;
+            }
+      grid_options:
+        columns: 5
+        rows: 1
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_5_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{{ states(''sensor.irrigation_zone_5_name'') }}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_5'',''on'') or is_state(''script.irrigation_zone_5_run'',''on'')
+          %}{% if on %}Running - {{ states(''sensor.irrigation_zone_5_remaining'') }} min left{% else
+          %}{{ states(''sensor.irrigation_zone_5_today'') | float(0) | round(0) }} L today - {{ states(''input_number.irrigation_zone_5_rate'')
+          | int }} L/h{% endif %}'
+        icon: '{{ state_attr(''switch.irrigation_zone_5'',''icon'') or ''mdi:sprinkler-variant'' }}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_5'',''on'') or is_state(''script.irrigation_zone_5_run'',''on'')
+          %}{{ ''green'' if on else ''grey'' }}'
+        tap_action:
+          action: navigate
+          navigation_path: '#zone-5'
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 22px 6px 6px 22px;
+            }
+            mushroom-state-info $ .primary {
+              font-weight: 600;
+              letter-spacing: -0.01em;
+            }
+      grid_options:
+        columns: 7
+        rows: 1
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_5_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_5'',''on'') or is_state(''script.irrigation_zone_5_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_5'',''on'') or is_state(''script.irrigation_zone_5_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_5_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_5_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_5'',''on'') or is_state(''script.irrigation_zone_5_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_5'',''on'') or is_state(''script.irrigation_zone_5_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_5_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 6px 22px 22px 6px;
+            }
+      grid_options:
+        columns: 5
+        rows: 1
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_6_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{{ states(''sensor.irrigation_zone_6_name'') }}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_6'',''on'') or is_state(''script.irrigation_zone_6_run'',''on'')
+          %}{% if on %}Running - {{ states(''sensor.irrigation_zone_6_remaining'') }} min left{% else
+          %}{{ states(''sensor.irrigation_zone_6_today'') | float(0) | round(0) }} L today - {{ states(''input_number.irrigation_zone_6_rate'')
+          | int }} L/h{% endif %}'
+        icon: '{{ state_attr(''switch.irrigation_zone_6'',''icon'') or ''mdi:sprinkler-variant'' }}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_6'',''on'') or is_state(''script.irrigation_zone_6_run'',''on'')
+          %}{{ ''green'' if on else ''grey'' }}'
+        tap_action:
+          action: navigate
+          navigation_path: '#zone-6'
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 22px 6px 6px 22px;
+            }
+            mushroom-state-info $ .primary {
+              font-weight: 600;
+              letter-spacing: -0.01em;
+            }
+      grid_options:
+        columns: 7
+        rows: 1
+    - type: conditional
+      conditions:
+      - condition: state
+        entity: input_boolean.irrigation_zone_6_enabled
+        state: 'on'
+      card:
+        type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_6'',''on'') or is_state(''script.irrigation_zone_6_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_6'',''on'') or is_state(''script.irrigation_zone_6_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_6_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_6_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_6'',''on'') or is_state(''script.irrigation_zone_6_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_6'',''on'') or is_state(''script.irrigation_zone_6_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_6_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 6px 22px 22px 6px;
+            }
+      grid_options:
+        columns: 5
+        rows: 1
+    - type: heading
+      heading: Setup
+      heading_style: subtitle
+      icon: mdi:tune
+    - type: entities
+      show_header_toggle: false
+      entities:
+      - entity: input_boolean.irrigation_enabled
+        name: Irrigation enabled
+      - entity: input_text.irrigation_weather
+        name: Weather entity
+      - entity: input_text.irrigation_schedule
+        name: Weekly plan
+      - type: divider
+      - entity: input_datetime.irrigation_counter_start
+        name: Counting since
+      - entity: sensor.irrigation_water_since
+        name: Total since start
+      card_mod:
+        style: |
+          ha-card { border: none; border-radius: 24px; }
+      grid_options:
+        columns: 12
+        rows: auto
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#zone-1'
+      name: '{{ states(''sensor.irrigation_zone_1_name'') }}'
+      icon: mdi:sprinkler-variant
+      bg_blur: 12
+      bg_opacity: 88
+      shadow_opacity: 40
+      close_by_clicking_outside: true
+      cards:
+      - type: custom:mushroom-template-card
+        primary: '{% set e = state_attr(''sensor.irrigation_log'',''entries'') or [] %}{% set z = e |
+          selectattr(''slot'',''eq'',1) | list %}{% if z %}{{ z[0].start }} - {{ z[0].liters }} L{% else
+          %}no run recorded yet{% endif %}'
+        secondary: Last run
+        icon: mdi:history
+        icon_color: grey
+        tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-number-card
+        entity: input_number.irrigation_zone_1_duration
+        name: Run time
+        icon: mdi:timer-sand
+        icon_color: grey
+        display_mode: slider
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_1'',''on'') or is_state(''script.irrigation_zone_1_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_1'',''on'') or is_state(''script.irrigation_zone_1_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_1_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_1_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_1'',''on'') or is_state(''script.irrigation_zone_1_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_1'',''on'') or is_state(''script.irrigation_zone_1_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_1_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 20px;
+            }
+        grid_options:
+          columns: 12
+          rows: 1
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_1_today'') | float(0) | round(0) }} L'
+          secondary: Today
+          icon: mdi:water
+          icon_color: blue
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_1_week'') | float(0) | round(0) }} L'
+          secondary: Week
+          icon: mdi:water
+          icon_color: cyan
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_1_month'') | float(0) | round(0) }} L'
+          secondary: Month
+          icon: mdi:water
+          icon_color: teal
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+      - type: entities
+        show_header_toggle: false
+        entities:
+        - entity: input_boolean.irrigation_zone_1_enabled
+          name: Zone in use
+        - entity: input_number.irrigation_zone_1_rate
+          name: Flow rate
+        - entity: switch.irrigation_zone_1
+          name: Valve, tap to rename
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: history-graph
+        hours_to_show: 24
+        title: Last 24 hours
+        entities:
+        - entity: switch.irrigation_zone_1
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#zone-2'
+      name: '{{ states(''sensor.irrigation_zone_2_name'') }}'
+      icon: mdi:sprinkler-variant
+      bg_blur: 12
+      bg_opacity: 88
+      shadow_opacity: 40
+      close_by_clicking_outside: true
+      cards:
+      - type: custom:mushroom-template-card
+        primary: '{% set e = state_attr(''sensor.irrigation_log'',''entries'') or [] %}{% set z = e |
+          selectattr(''slot'',''eq'',2) | list %}{% if z %}{{ z[0].start }} - {{ z[0].liters }} L{% else
+          %}no run recorded yet{% endif %}'
+        secondary: Last run
+        icon: mdi:history
+        icon_color: grey
+        tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-number-card
+        entity: input_number.irrigation_zone_2_duration
+        name: Run time
+        icon: mdi:timer-sand
+        icon_color: grey
+        display_mode: slider
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_2'',''on'') or is_state(''script.irrigation_zone_2_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_2'',''on'') or is_state(''script.irrigation_zone_2_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_2_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_2_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_2'',''on'') or is_state(''script.irrigation_zone_2_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_2'',''on'') or is_state(''script.irrigation_zone_2_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_2_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 20px;
+            }
+        grid_options:
+          columns: 12
+          rows: 1
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_2_today'') | float(0) | round(0) }} L'
+          secondary: Today
+          icon: mdi:water
+          icon_color: blue
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_2_week'') | float(0) | round(0) }} L'
+          secondary: Week
+          icon: mdi:water
+          icon_color: cyan
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_2_month'') | float(0) | round(0) }} L'
+          secondary: Month
+          icon: mdi:water
+          icon_color: teal
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+      - type: entities
+        show_header_toggle: false
+        entities:
+        - entity: input_boolean.irrigation_zone_2_enabled
+          name: Zone in use
+        - entity: input_number.irrigation_zone_2_rate
+          name: Flow rate
+        - entity: switch.irrigation_zone_2
+          name: Valve, tap to rename
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: history-graph
+        hours_to_show: 24
+        title: Last 24 hours
+        entities:
+        - entity: switch.irrigation_zone_2
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#zone-3'
+      name: '{{ states(''sensor.irrigation_zone_3_name'') }}'
+      icon: mdi:sprinkler-variant
+      bg_blur: 12
+      bg_opacity: 88
+      shadow_opacity: 40
+      close_by_clicking_outside: true
+      cards:
+      - type: custom:mushroom-template-card
+        primary: '{% set e = state_attr(''sensor.irrigation_log'',''entries'') or [] %}{% set z = e |
+          selectattr(''slot'',''eq'',3) | list %}{% if z %}{{ z[0].start }} - {{ z[0].liters }} L{% else
+          %}no run recorded yet{% endif %}'
+        secondary: Last run
+        icon: mdi:history
+        icon_color: grey
+        tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-number-card
+        entity: input_number.irrigation_zone_3_duration
+        name: Run time
+        icon: mdi:timer-sand
+        icon_color: grey
+        display_mode: slider
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_3'',''on'') or is_state(''script.irrigation_zone_3_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_3'',''on'') or is_state(''script.irrigation_zone_3_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_3_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_3_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_3'',''on'') or is_state(''script.irrigation_zone_3_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_3'',''on'') or is_state(''script.irrigation_zone_3_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_3_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 20px;
+            }
+        grid_options:
+          columns: 12
+          rows: 1
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_3_today'') | float(0) | round(0) }} L'
+          secondary: Today
+          icon: mdi:water
+          icon_color: blue
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_3_week'') | float(0) | round(0) }} L'
+          secondary: Week
+          icon: mdi:water
+          icon_color: cyan
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_3_month'') | float(0) | round(0) }} L'
+          secondary: Month
+          icon: mdi:water
+          icon_color: teal
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+      - type: entities
+        show_header_toggle: false
+        entities:
+        - entity: input_boolean.irrigation_zone_3_enabled
+          name: Zone in use
+        - entity: input_number.irrigation_zone_3_rate
+          name: Flow rate
+        - entity: switch.irrigation_zone_3
+          name: Valve, tap to rename
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: history-graph
+        hours_to_show: 24
+        title: Last 24 hours
+        entities:
+        - entity: switch.irrigation_zone_3
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#zone-4'
+      name: '{{ states(''sensor.irrigation_zone_4_name'') }}'
+      icon: mdi:sprinkler-variant
+      bg_blur: 12
+      bg_opacity: 88
+      shadow_opacity: 40
+      close_by_clicking_outside: true
+      cards:
+      - type: custom:mushroom-template-card
+        primary: '{% set e = state_attr(''sensor.irrigation_log'',''entries'') or [] %}{% set z = e |
+          selectattr(''slot'',''eq'',4) | list %}{% if z %}{{ z[0].start }} - {{ z[0].liters }} L{% else
+          %}no run recorded yet{% endif %}'
+        secondary: Last run
+        icon: mdi:history
+        icon_color: grey
+        tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-number-card
+        entity: input_number.irrigation_zone_4_duration
+        name: Run time
+        icon: mdi:timer-sand
+        icon_color: grey
+        display_mode: slider
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_4'',''on'') or is_state(''script.irrigation_zone_4_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_4'',''on'') or is_state(''script.irrigation_zone_4_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_4_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_4_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_4'',''on'') or is_state(''script.irrigation_zone_4_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_4'',''on'') or is_state(''script.irrigation_zone_4_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_4_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 20px;
+            }
+        grid_options:
+          columns: 12
+          rows: 1
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_4_today'') | float(0) | round(0) }} L'
+          secondary: Today
+          icon: mdi:water
+          icon_color: blue
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_4_week'') | float(0) | round(0) }} L'
+          secondary: Week
+          icon: mdi:water
+          icon_color: cyan
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_4_month'') | float(0) | round(0) }} L'
+          secondary: Month
+          icon: mdi:water
+          icon_color: teal
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+      - type: entities
+        show_header_toggle: false
+        entities:
+        - entity: input_boolean.irrigation_zone_4_enabled
+          name: Zone in use
+        - entity: input_number.irrigation_zone_4_rate
+          name: Flow rate
+        - entity: switch.irrigation_zone_4
+          name: Valve, tap to rename
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: history-graph
+        hours_to_show: 24
+        title: Last 24 hours
+        entities:
+        - entity: switch.irrigation_zone_4
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#zone-5'
+      name: '{{ states(''sensor.irrigation_zone_5_name'') }}'
+      icon: mdi:sprinkler-variant
+      bg_blur: 12
+      bg_opacity: 88
+      shadow_opacity: 40
+      close_by_clicking_outside: true
+      cards:
+      - type: custom:mushroom-template-card
+        primary: '{% set e = state_attr(''sensor.irrigation_log'',''entries'') or [] %}{% set z = e |
+          selectattr(''slot'',''eq'',5) | list %}{% if z %}{{ z[0].start }} - {{ z[0].liters }} L{% else
+          %}no run recorded yet{% endif %}'
+        secondary: Last run
+        icon: mdi:history
+        icon_color: grey
+        tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-number-card
+        entity: input_number.irrigation_zone_5_duration
+        name: Run time
+        icon: mdi:timer-sand
+        icon_color: grey
+        display_mode: slider
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_5'',''on'') or is_state(''script.irrigation_zone_5_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_5'',''on'') or is_state(''script.irrigation_zone_5_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_5_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_5_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_5'',''on'') or is_state(''script.irrigation_zone_5_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_5'',''on'') or is_state(''script.irrigation_zone_5_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_5_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 20px;
+            }
+        grid_options:
+          columns: 12
+          rows: 1
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_5_today'') | float(0) | round(0) }} L'
+          secondary: Today
+          icon: mdi:water
+          icon_color: blue
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_5_week'') | float(0) | round(0) }} L'
+          secondary: Week
+          icon: mdi:water
+          icon_color: cyan
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_5_month'') | float(0) | round(0) }} L'
+          secondary: Month
+          icon: mdi:water
+          icon_color: teal
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+      - type: entities
+        show_header_toggle: false
+        entities:
+        - entity: input_boolean.irrigation_zone_5_enabled
+          name: Zone in use
+        - entity: input_number.irrigation_zone_5_rate
+          name: Flow rate
+        - entity: switch.irrigation_zone_5
+          name: Valve, tap to rename
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: history-graph
+        hours_to_show: 24
+        title: Last 24 hours
+        entities:
+        - entity: switch.irrigation_zone_5
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#zone-6'
+      name: '{{ states(''sensor.irrigation_zone_6_name'') }}'
+      icon: mdi:sprinkler-variant
+      bg_blur: 12
+      bg_opacity: 88
+      shadow_opacity: 40
+      close_by_clicking_outside: true
+      cards:
+      - type: custom:mushroom-template-card
+        primary: '{% set e = state_attr(''sensor.irrigation_log'',''entries'') or [] %}{% set z = e |
+          selectattr(''slot'',''eq'',6) | list %}{% if z %}{{ z[0].start }} - {{ z[0].liters }} L{% else
+          %}no run recorded yet{% endif %}'
+        secondary: Last run
+        icon: mdi:history
+        icon_color: grey
+        tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-number-card
+        entity: input_number.irrigation_zone_6_duration
+        name: Run time
+        icon: mdi:timer-sand
+        icon_color: grey
+        display_mode: slider
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: custom:mushroom-template-card
+        primary: '{% set on = is_state(''switch.irrigation_zone_6'',''on'') or is_state(''script.irrigation_zone_6_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}Locked{% elif on %}Stop{% else
+          %}Start{% endif %}'
+        secondary: '{% set on = is_state(''switch.irrigation_zone_6'',''on'') or is_state(''script.irrigation_zone_6_run'',''on'')
+          %}{% if is_state(''input_boolean.irrigation_running'',''on'') %}cycle running{% elif on %}{{
+          states(''sensor.irrigation_zone_6_remaining'') }} min left{% else %}{{ states(''input_number.irrigation_zone_6_duration'')
+          | int }} min{% endif %}'
+        icon: '{% set on = is_state(''switch.irrigation_zone_6'',''on'') or is_state(''script.irrigation_zone_6_run'',''on'')
+          %}{% if on %}mdi:stop-circle-outline{% else %}mdi:play-circle-outline{% endif %}'
+        icon_color: '{% set on = is_state(''switch.irrigation_zone_6'',''on'') or is_state(''script.irrigation_zone_6_run'',''on'')
+          %}{% if on %}red{% elif is_state(''input_boolean.irrigation_running'',''on'') %}disabled{% else
+          %}blue{% endif %}'
+        tap_action:
+          action: perform-action
+          perform_action: script.irrigation_zone_6_toggle
+        hold_action:
+          action: none
+        double_tap_action:
+          action: none
+        card_mod:
+          style: |
+            ha-card {
+              border: none;
+              box-shadow: none;
+              border-radius: 20px;
+            }
+        grid_options:
+          columns: 12
+          rows: 1
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_6_today'') | float(0) | round(0) }} L'
+          secondary: Today
+          icon: mdi:water
+          icon_color: blue
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_6_week'') | float(0) | round(0) }} L'
+          secondary: Week
+          icon: mdi:water
+          icon_color: cyan
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+        - type: custom:mushroom-template-card
+          primary: '{{ states(''sensor.irrigation_zone_6_month'') | float(0) | round(0) }} L'
+          secondary: Month
+          icon: mdi:water
+          icon_color: teal
+          tap_action:
+            action: none
+          card_mod:
+            style: |
+              ha-card { border: none; border-radius: 18px; }
+      - type: entities
+        show_header_toggle: false
+        entities:
+        - entity: input_boolean.irrigation_zone_6_enabled
+          name: Zone in use
+        - entity: input_number.irrigation_zone_6_rate
+          name: Flow rate
+        - entity: switch.irrigation_zone_6
+          name: Valve, tap to rename
+        card_mod:
+          style: |
+            ha-card { border: none; border-radius: 20px; }
+      - type: history-graph
+        hours_to_show: 24
+        title: Last 24 hours
+        entities:
+        - entity: switch.irrigation_zone_6
